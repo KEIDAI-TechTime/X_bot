@@ -1,0 +1,9 @@
+{
+  "buildCommand": "cd project-5457367 && npm install && npm run build",
+  "outputDirectory": "project-5457367/out",
+  "installCommand": "echo 'Skip install'",
+  "framework": null,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
