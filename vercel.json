@@ -3,7 +3,13 @@
   "outputDirectory": "project-5457367/out",
   "installCommand": "echo 'Skip install'",
   "framework": null,
+  "functions": {
+    "project-5457367/api/*.ts": {
+      "runtime": "@vercel/node@3"
+    }
+  },
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/project-5457367/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

@@ -41,9 +41,36 @@ export default function TestTab({ settings }: TestTabProps) {
     }, 1500);
   };
 
-  const handlePostNow = () => {
-    if (confirm('この内容で今すぐ投稿しますか？')) {
-      alert('投稿しました！');
+  const [isPosting, setIsPosting] = useState(false);
+
+  const handlePostNow = async () => {
+    if (!confirm('この内容で今すぐ投稿しますか？')) {
+      return;
+    }
+
+    setIsPosting(true);
+    try {
+      const response = await fetch('/api/post-tweet', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: generatedPost }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert(`投稿しました！\nTweet ID: ${data.tweet.id}`);
+        setGeneratedPost('');
+      } else {
+        alert(`投稿に失敗しました: ${data.error}\n${data.details || ''}`);
+      }
+    } catch (error) {
+      alert('投稿に失敗しました。ネットワークエラーが発生しました。');
+      console.error('Post error:', error);
+    } finally {
+      setIsPosting(false);
     }
   };
 
@@ -147,10 +174,20 @@ export default function TestTab({ settings }: TestTabProps) {
                   </button>
                   <button
                     onClick={handlePostNow}
-                    className="flex-1 h-12 bg-[#4F46E5] text-white rounded-lg font-medium hover:bg-[#4338CA] transition-colors cursor-pointer whitespace-nowrap"
+                    disabled={isPosting}
+                    className="flex-1 h-12 bg-[#4F46E5] text-white rounded-lg font-medium hover:bg-[#4338CA] transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <i className="ri-send-plane-fill mr-2"></i>
-                    今すぐ投稿
+                    {isPosting ? (
+                      <>
+                        <i className="ri-loader-4-line animate-spin mr-2"></i>
+                        投稿中...
+                      </>
+                    ) : (
+                      <>
+                        <i className="ri-send-plane-fill mr-2"></i>
+                        今すぐ投稿
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
