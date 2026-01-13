@@ -1,12 +1,28 @@
 
-import { useState } from 'react';
-import { mockPostHistory } from '../../../mocks/postSettings';
+import { useState, useEffect } from 'react';
+import { historyApi, type PostHistory } from '../../../services/api';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 
 export default function HistoryTab() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [history] = useState(mockPostHistory);
+  const [history, setHistory] = useState<PostHistory[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        setLoading(true);
+        const data = await historyApi.get(100);
+        setHistory(data);
+      } catch (err) {
+        console.error('Failed to fetch history:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchHistory();
+  }, []);
 
   const filteredHistory = history.filter(post =>
     post.content.toLowerCase().includes(searchQuery.toLowerCase())
@@ -47,6 +63,11 @@ export default function HistoryTab() {
         </button>
       </div>
 
+      {loading ? (
+        <div className="bg-white rounded-xl p-12 text-center">
+          <p className="text-gray-500">読み込み中...</p>
+        </div>
+      ) : (
       <div className="space-y-4">
         {filteredHistory.map((post) => (
           <div key={post.id} className="bg-white rounded-lg shadow-sm overflow-hidden">
@@ -77,8 +98,9 @@ export default function HistoryTab() {
           </div>
         ))}
       </div>
+      )}
 
-      {filteredHistory.length === 0 && (
+      {!loading && filteredHistory.length === 0 && (
         <div className="bg-white rounded-xl p-12 text-center">
           <i className="ri-inbox-line text-6xl text-gray-300 mb-4"></i>
           <p className="text-gray-500">該当する投稿履歴がありません</p>
