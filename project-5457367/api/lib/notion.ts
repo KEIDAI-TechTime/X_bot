@@ -215,21 +215,41 @@ export async function getStatus() {
 
   let nextPostTime: string | null = null;
   if (settings?.enabled && settings.postTimes.length > 0) {
+    // Get current time in JST (UTC+9)
     const now = new Date();
+    const jstOffset = 9 * 60 * 60 * 1000; // 9 hours in milliseconds
+    const nowJST = new Date(now.getTime() + jstOffset);
+    const currentTime = `${nowJST.getUTCHours().toString().padStart(2, '0')}:${nowJST.getUTCMinutes().toString().padStart(2, '0')}`;
+
     const times = settings.postTimes.sort();
-    const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
     const nextTime = times.find(t => t > currentTime);
+
     if (nextTime) {
+      // Create date for today in JST, then convert to UTC
       const [hours, minutes] = nextTime.split(':');
-      const nextDate = new Date(now);
-      nextDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-      nextPostTime = nextDate.toISOString();
+      const nextDateJST = new Date(Date.UTC(
+        nowJST.getUTCFullYear(),
+        nowJST.getUTCMonth(),
+        nowJST.getUTCDate(),
+        parseInt(hours),
+        parseInt(minutes),
+        0
+      ));
+      // Subtract JST offset to get UTC time
+      nextPostTime = new Date(nextDateJST.getTime() - jstOffset).toISOString();
     } else if (times.length > 0) {
+      // Use first time tomorrow
       const [hours, minutes] = times[0].split(':');
-      const nextDate = new Date(now);
-      nextDate.setDate(nextDate.getDate() + 1);
-      nextDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-      nextPostTime = nextDate.toISOString();
+      const nextDateJST = new Date(Date.UTC(
+        nowJST.getUTCFullYear(),
+        nowJST.getUTCMonth(),
+        nowJST.getUTCDate() + 1,
+        parseInt(hours),
+        parseInt(minutes),
+        0
+      ));
+      // Subtract JST offset to get UTC time
+      nextPostTime = new Date(nextDateJST.getTime() - jstOffset).toISOString();
     }
   }
 
