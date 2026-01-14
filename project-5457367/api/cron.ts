@@ -17,10 +17,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json({ success: true, message: 'Bot is disabled' });
     }
 
-    // 現在時刻をチェック
+    // 現在時刻をJSTで取得（UTC+9）
     const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
+    const jstOffset = 9 * 60 * 60 * 1000;
+    const nowJST = new Date(now.getTime() + jstOffset);
+    const currentHour = nowJST.getUTCHours();
+    const currentMinute = nowJST.getUTCMinutes();
     const currentTime = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
 
     // 現在時刻が投稿時間に近いかチェック（±5分）
@@ -35,9 +37,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json({ success: true, message: 'Not a scheduled post time', currentTime });
     }
 
-    // 曜日をチェック
+    // 曜日をチェック（JSTで）
     const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-    const currentDay = dayMap[now.getDay()];
+    const currentDay = dayMap[nowJST.getUTCDay()];
     if (!settings.activeDays.includes(currentDay)) {
       return res.json({ success: true, message: 'Not an active day', currentDay });
     }
