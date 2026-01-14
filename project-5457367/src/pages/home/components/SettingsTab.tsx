@@ -1,34 +1,31 @@
 
-import { Dispatch, SetStateAction } from 'react';
-
-interface Settings {
-  name: string;
-  enabled: boolean;
-  persona: string;
-  tone: string;
-  topic: string;
-  contentDirection: string;
-  mustInclude: string;
-  mustExclude: string;
-  structureTemplate: string;
-  maxLength: number;
-  useEmoji: boolean;
-  useHashtags: boolean;
-  hashtagRules: string;
-  referenceInfo: string;
-  examplePosts: string;
-}
+import { Dispatch, SetStateAction, useState } from 'react';
+import type { PostSettings } from '../../../services/api';
 
 interface SettingsTabProps {
-  settings: Settings;
-  setSettings: Dispatch<SetStateAction<Settings>>;
+  settings: PostSettings;
+  setSettings: Dispatch<SetStateAction<PostSettings>>;
+  onSave?: (settings: Partial<PostSettings>) => Promise<void>;
 }
 
-export default function SettingsTab({ settings, setSettings }: SettingsTabProps) {
+export default function SettingsTab({ settings, setSettings, onSave }: SettingsTabProps) {
   const toneOptions = ['カジュアル', 'フォーマル', 'ユーモア', 'カスタム'];
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = () => {
-    alert('設定を保存しました');
+  const handleSave = async () => {
+    if (onSave) {
+      setSaving(true);
+      try {
+        await onSave(settings);
+        alert('設定を保存しました');
+      } catch (err) {
+        alert('保存に失敗しました');
+      } finally {
+        setSaving(false);
+      }
+    } else {
+      alert('設定を保存しました');
+    }
   };
 
   return (
@@ -212,9 +209,10 @@ export default function SettingsTab({ settings, setSettings }: SettingsTabProps)
       <div className="flex justify-center pt-4">
         <button
           onClick={handleSave}
-          className="w-60 h-14 bg-gradient-to-r from-[#4F46E5] to-[#7C3AED] text-white rounded-lg font-semibold text-base hover:scale-105 transition-transform duration-200 cursor-pointer whitespace-nowrap"
+          disabled={saving}
+          className="w-60 h-14 bg-gradient-to-r from-[#4F46E5] to-[#7C3AED] text-white rounded-lg font-semibold text-base hover:scale-105 transition-transform duration-200 cursor-pointer whitespace-nowrap disabled:opacity-50"
         >
-          設定を保存
+          {saving ? '保存中...' : '設定を保存'}
         </button>
       </div>
     </div>

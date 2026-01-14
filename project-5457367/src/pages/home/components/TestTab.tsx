@@ -1,49 +1,43 @@
 
 import { useState } from 'react';
-
-interface Settings {
-  persona: string;
-  tone: string;
-  topic: string;
-  contentDirection: string;
-  mustInclude: string;
-  mustExclude: string;
-  structureTemplate: string;
-  maxLength: number;
-  useEmoji: boolean;
-  useHashtags: boolean;
-  hashtagRules: string;
-  referenceInfo: string;
-  examplePosts: string;
-}
+import { postApi, type PostSettings } from '../../../services/api';
 
 interface TestTabProps {
-  settings: Settings;
+  settings: PostSettings;
 }
 
 export default function TestTab({ settings }: TestTabProps) {
   const [generatedPost, setGeneratedPost] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isPosting, setIsPosting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const mockGeneratedPosts = [
-    '🚀 2025年のAIトレンド予測！自然言語処理がさらに進化し、誰でも簡単にAIを活用できる時代に。今から準備を始めましょう💡 #AI #テクノロジー #未来',
-    '💼 リモートワークの新常識：非同期コミュニケーションが鍵。時間に縛られない働き方で生産性が2倍に！あなたのチームは準備できていますか？ #リモートワーク #働き方改革',
-    '📊 データドリブン経営の実践法：KPIを3つに絞り込むことで意思決定スピードが劇的に向上。シンプルが最強です✨ #データ分析 #経営戦略',
-    '🎯 目標達成率を上げる秘訣：毎朝5分の振り返りタイム。小さな習慣が大きな成果を生みます。今日から始めてみませんか？ #自己啓発 #習慣化',
-  ];
-
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     setIsGenerating(true);
-    setTimeout(() => {
-      const randomPost = mockGeneratedPosts[Math.floor(Math.random() * mockGeneratedPosts.length)];
-      setGeneratedPost(randomPost);
+    setError(null);
+    try {
+      const result = await postApi.generate(settings);
+      setGeneratedPost(result.content);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
       setIsGenerating(false);
-    }, 1500);
+    }
   };
 
-  const handlePostNow = () => {
-    if (confirm('この内容で今すぐ投稿しますか？')) {
+  const handlePostNow = async () => {
+    if (!confirm('この内容で今すぐ投稿しますか？')) return;
+
+    setIsPosting(true);
+    setError(null);
+    try {
+      await postApi.postNow();
       alert('投稿しました！');
+      setGeneratedPost('');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsPosting(false);
     }
   };
 
@@ -137,20 +131,28 @@ export default function TestTab({ settings }: TestTabProps) {
                   </div>
                 </div>
 
+                {error && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                    {error}
+                  </div>
+                )}
+
                 <div className="flex gap-3">
                   <button
                     onClick={handleGenerate}
-                    className="flex-1 h-12 border-2 border-gray-300 text-gray-700 rounded-lg font-medium hover:border-[#4F46E5] hover:text-[#4F46E5] transition-colors cursor-pointer whitespace-nowrap"
+                    disabled={isGenerating}
+                    className="flex-1 h-12 border-2 border-gray-300 text-gray-700 rounded-lg font-medium hover:border-[#4F46E5] hover:text-[#4F46E5] transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50"
                   >
                     <i className="ri-refresh-line mr-2"></i>
                     再生成
                   </button>
                   <button
                     onClick={handlePostNow}
-                    className="flex-1 h-12 bg-[#4F46E5] text-white rounded-lg font-medium hover:bg-[#4338CA] transition-colors cursor-pointer whitespace-nowrap"
+                    disabled={isPosting}
+                    className="flex-1 h-12 bg-[#4F46E5] text-white rounded-lg font-medium hover:bg-[#4338CA] transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50"
                   >
                     <i className="ri-send-plane-fill mr-2"></i>
-                    今すぐ投稿
+                    {isPosting ? '投稿中...' : '今すぐ投稿'}
                   </button>
                 </div>
               </div>
