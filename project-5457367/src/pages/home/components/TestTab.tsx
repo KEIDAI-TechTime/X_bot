@@ -1,10 +1,15 @@
 
 import { useState } from 'react';
+import { mockPostHistory } from '../../../mocks/postSettings';
 
 interface Settings {
   persona: string;
   tone: string;
   topic: string;
+  topics: string[];
+  topicRotation: boolean;
+  avoidRecentTopics: boolean;
+  recentTopicsToAvoid: number;
   contentDirection: string;
   mustInclude: string;
   mustExclude: string;
@@ -23,19 +28,82 @@ interface TestTabProps {
 
 export default function TestTab({ settings }: TestTabProps) {
   const [generatedPost, setGeneratedPost] = useState('');
+  const [selectedTopic, setSelectedTopic] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const mockGeneratedPosts = [
-    '🚀 2025年のAIトレンド予測！自然言語処理がさらに進化し、誰でも簡単にAIを活用できる時代に。今から準備を始めましょう💡 #AI #テクノロジー #未来',
-    '💼 リモートワークの新常識：非同期コミュニケーションが鍵。時間に縛られない働き方で生産性が2倍に！あなたのチームは準備できていますか？ #リモートワーク #働き方改革',
-    '📊 データドリブン経営の実践法：KPIを3つに絞り込むことで意思決定スピードが劇的に向上。シンプルが最強です✨ #データ分析 #経営戦略',
-    '🎯 目標達成率を上げる秘訣：毎朝5分の振り返りタイム。小さな習慣が大きな成果を生みます。今日から始めてみませんか？ #自己啓発 #習慣化',
-  ];
+  // トピックごとのモック投稿（実際にはAIが生成）
+  const mockPostsByTopic: { [key: string]: string[] } = {
+    'AI・機械学習の最新動向': [
+      '🤖 機械学習モデルのファインチューニングが簡単に！数行のコードで自社データに最適化できる時代。専門知識がなくてもAI活用が可能に #AI #機械学習',
+      '💡 AIエージェントが注目を集めています。タスクを自動で実行してくれる「働くAI」の時代がすぐそこに。あなたの業務はどう変わる？ #AIエージェント #自動化',
+    ],
+    'リモートワーク・生産性向上': [
+      '💼 リモートワークの新常識：非同期コミュニケーションが鍵。時間に縛られない働き方で生産性が2倍に！ #リモートワーク #働き方改革',
+      '⏰ ポモドーロテクニックを1ヶ月試した結果→集中力が劇的に向上。25分集中、5分休憩のリズムが最強です #生産性向上 #タイムマネジメント',
+    ],
+    'データ分析・ビジネスインテリジェンス': [
+      '📊 データドリブン経営の実践法：KPIを3つに絞り込むことで意思決定スピードが劇的に向上。シンプルが最強です #データ分析 #経営戦略',
+      '📈 ダッシュボード作成のコツ：見る人の「次のアクション」を意識すること。データは行動につながらないと意味がない #BI #データ可視化',
+    ],
+    'スタートアップ・起業': [
+      '🚀 スタートアップの成功法則：MVPを最速で出して、ユーザーの声を聞く。完璧を目指さず、まず市場に出すことが大事 #スタートアップ #起業',
+      '💰 資金調達よりも大切なこと→プロダクトマーケットフィット。解決すべき課題が明確なら、投資家は後からついてくる #PMF #起業家',
+    ],
+    'クラウドサービス・SaaS': [
+      '☁️ SaaS選定のポイント：APIの充実度を必ずチェック。将来の拡張性と他ツールとの連携が競争力の源泉に #SaaS #クラウド',
+      '🔧 NoCodeツールでSaaS構築！プログラミング不要で本格的なサービスが作れる時代。アイデアがあれば誰でも起業家に #NoCode #SaaS',
+    ],
+    'プログラミング・開発ツール': [
+      '⚡️ コードレビューの効率化：AIペアプログラミングツールで品質を保ちながら開発スピード2倍に。もう一人で悩まない #開発効率化 #AI',
+      '🛠️ 開発者体験（DevEx）が重視される時代。良いツールへの投資は長期的に見てコスト削減につながる #DX #開発ツール',
+    ],
+    'default': [
+      '🚀 テクノロジーの進化が止まらない！最新トレンドをキャッチアップして、ビジネスに活かしましょう #テック #ビジネス',
+      '💡 イノベーションは「不便」から生まれる。日常の小さな困りごとにビジネスチャンスが眠っています #イノベーション',
+    ]
+  };
+
+  // 最近の投稿から使用されたトピックを抽出
+  const getRecentTopicsFromHistory = (): string[] => {
+    if (!settings.avoidRecentTopics) return [];
+
+    const recentPosts = mockPostHistory
+      .slice(0, settings.recentTopicsToAvoid)
+      .map(p => p.content);
+
+    // 各トピックが最近の投稿に含まれているかチェック
+    return settings.topics.filter(topic => {
+      const topicKeywords = topic.toLowerCase().split(/[・/]/);
+      return recentPosts.some(post =>
+        topicKeywords.some(keyword => post.toLowerCase().includes(keyword))
+      );
+    });
+  };
+
+  // 使用可能なトピックを選択
+  const selectNextTopic = (): string => {
+    if (!settings.topicRotation || settings.topics.length === 0) {
+      return settings.topic;
+    }
+
+    const recentTopics = getRecentTopicsFromHistory();
+    const availableTopics = settings.topics.filter(t => !recentTopics.includes(t));
+
+    // 利用可能なトピックがない場合は全トピックからランダムに選択
+    const topicsToChooseFrom = availableTopics.length > 0 ? availableTopics : settings.topics;
+    return topicsToChooseFrom[Math.floor(Math.random() * topicsToChooseFrom.length)];
+  };
 
   const handleGenerate = () => {
     setIsGenerating(true);
     setTimeout(() => {
-      const randomPost = mockGeneratedPosts[Math.floor(Math.random() * mockGeneratedPosts.length)];
+      const topic = selectNextTopic();
+      setSelectedTopic(topic);
+
+      // トピックに対応する投稿を取得、なければデフォルト
+      const postsForTopic = mockPostsByTopic[topic] || mockPostsByTopic['default'];
+      const randomPost = postsForTopic[Math.floor(Math.random() * postsForTopic.length)];
+
       setGeneratedPost(randomPost);
       setIsGenerating(false);
     }, 1500);
@@ -83,9 +151,25 @@ export default function TestTab({ settings }: TestTabProps) {
                 <span className="ml-2 font-medium text-gray-900">{settings.tone}</span>
               </div>
               <div>
-                <span className="text-gray-500">テーマ:</span>
-                <span className="ml-2 font-medium text-gray-900">{settings.topic}</span>
+                <span className="text-gray-500">トピックローテーション:</span>
+                <span className="ml-2 font-medium text-gray-900">
+                  {settings.topicRotation ? `有効（${settings.topics.length}件）` : '無効'}
+                </span>
               </div>
+              {settings.topicRotation && settings.avoidRecentTopics && (
+                <div>
+                  <span className="text-gray-500">重複防止:</span>
+                  <span className="ml-2 font-medium text-green-600">
+                    直近{settings.recentTopicsToAvoid}件を回避
+                  </span>
+                </div>
+              )}
+              {selectedTopic && (
+                <div className="p-2 bg-blue-50 rounded-lg border border-blue-200">
+                  <span className="text-gray-500">選択されたトピック:</span>
+                  <span className="ml-2 font-medium text-blue-600">{selectedTopic}</span>
+                </div>
+              )}
               <div>
                 <span className="text-gray-500">最大文字数:</span>
                 <span className="ml-2 font-medium text-gray-900">{settings.maxLength}文字</span>
