@@ -6,6 +6,18 @@ export const mockPostSettings = {
   persona: 'テクノロジーとビジネスに詳しい、フレンドリーな専門家。最新のトレンドを分かりやすく解説します。',
   tone: 'カジュアル',
   topic: 'AI・テクノロジー・ビジネス',
+  // 複数トピック対応（ローテーション用）
+  topics: [
+    'AI・機械学習の最新動向',
+    'リモートワーク・生産性向上',
+    'データ分析・ビジネスインテリジェンス',
+    'スタートアップ・起業',
+    'クラウドサービス・SaaS',
+    'プログラミング・開発ツール'
+  ],
+  topicRotation: true,  // トピックローテーション有効
+  avoidRecentTopics: true,  // 最近のトピックを避ける
+  recentTopicsToAvoid: 3,  // 直近N件の投稿と類似トピックを避ける
   contentDirection: '最新のAIトレンドやビジネスに役立つ情報を、初心者にも分かりやすく解説。実用的なヒントを含める。',
   mustInclude: '具体例、実用的なアドバイス',
   mustExclude: '専門用語の羅列、ネガティブな内容',
