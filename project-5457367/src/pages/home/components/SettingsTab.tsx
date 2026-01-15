@@ -46,7 +46,7 @@ export default function SettingsTab({ settings, setSettings }: SettingsTabProps)
     });
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       handleAddTopic();
@@ -161,7 +161,7 @@ export default function SettingsTab({ settings, setSettings }: SettingsTabProps)
                     type="text"
                     value={newTopic}
                     onChange={(e) => setNewTopic(e.target.value)}
-                    onKeyPress={handleKeyPress}
+                    onKeyDown={handleKeyDown}
                     placeholder="新しいトピックを入力..."
                     className="flex-1 h-10 px-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4F46E5] text-sm"
                   />
