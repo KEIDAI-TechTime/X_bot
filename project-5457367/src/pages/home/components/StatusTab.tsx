@@ -16,7 +16,23 @@ interface StatusTabProps {
 export default function StatusTab({ status }: StatusTabProps) {
   const [countdown, setCountdown] = useState('');
 
+  const isValidTime = (timeStr: string) => {
+    if (!timeStr) return false;
+    const date = new Date(timeStr);
+    return !isNaN(date.getTime()) && date.getFullYear() > 1970;
+  };
+
   useEffect(() => {
+    // 自動投稿が無効または日時が無効な場合はカウントダウンを表示しない
+    if (!status.isRunning) {
+      setCountdown('');
+      return;
+    }
+    if (!isValidTime(status.nextPostTime)) {
+      setCountdown('');
+      return;
+    }
+
     const timer = setInterval(() => {
       const now = new Date();
       const nextPost = new Date(status.nextPostTime);
@@ -33,9 +49,22 @@ export default function StatusTab({ status }: StatusTabProps) {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [status.nextPostTime]);
+  }, [status.nextPostTime, status.isRunning]);
+
+  const isValidNextPostTime = (timeStr: string) => {
+    if (!timeStr) return false;
+    const date = new Date(timeStr);
+    // 1970年（Unixエポック）や無効な日付をチェック
+    return !isNaN(date.getTime()) && date.getFullYear() > 1970;
+  };
 
   const formatNextPostTime = (timeStr: string) => {
+    if (!status.isRunning) {
+      return '自動投稿が無効です';
+    }
+    if (!isValidNextPostTime(timeStr)) {
+      return 'スケジュール未設定';
+    }
     try {
       const date = new Date(timeStr);
       return format(date, 'yyyy年M月d日 HH:mm', { locale: ja });

@@ -24,7 +24,19 @@ export default function TopBar({ activeTab, status, enabled, onToggle }: TopBarP
     status: 'ステータス',
   };
 
+  const isValidNextPostTime = (timeStr: string) => {
+    if (!timeStr) return false;
+    const date = new Date(timeStr);
+    return !isNaN(date.getTime()) && date.getFullYear() > 1970;
+  };
+
   const formatNextPostTime = (timeStr: string) => {
+    if (!enabled) {
+      return '無効';
+    }
+    if (!isValidNextPostTime(timeStr)) {
+      return '未設定';
+    }
     try {
       const date = new Date(timeStr);
       return format(date, 'M月d日 HH:mm', { locale: ja });
