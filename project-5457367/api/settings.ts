@@ -18,15 +18,32 @@ const DEFAULT_SETTINGS: ScheduleSettings = {
 };
 
 // Notionから設定を取得
-async function getSettingsFromNotion(notion: Client, databaseId: string): Promise<{ settings: ScheduleSettings | null; availableProperties?: string[] }> {
+async function getSettingsFromNotion(notion: Client, databaseId: string): Promise<{
+  settings: ScheduleSettings | null;
+  availableProperties?: string[];
+  debug?: {
+    databaseId: string;
+    resultsCount: number;
+    error?: string;
+  };
+}> {
   try {
+    console.log('Querying Notion database:', databaseId);
     const response = await notion.databases.query({
       database_id: databaseId,
       page_size: 1,
     });
 
+    console.log('Query results count:', response.results.length);
+
     if (response.results.length === 0) {
-      return { settings: null };
+      return {
+        settings: null,
+        debug: {
+          databaseId,
+          resultsCount: 0,
+        }
+      };
     }
 
     const page = response.results[0] as any;
@@ -34,6 +51,7 @@ async function getSettingsFromNotion(notion: Client, databaseId: string): Promis
 
     // デバッグ用: 利用可能なプロパティ名を取得
     const availableProperties = Object.keys(properties);
+    console.log('Available properties:', availableProperties);
 
     // postTimes: JSON配列形式またはカンマ区切りテキスト
     let postTimes = DEFAULT_SETTINGS.postTimes;
@@ -77,10 +95,22 @@ async function getSettingsFromNotion(notion: Client, databaseId: string): Promis
     return {
       settings: { postTimes, activeDays, topics, enabled },
       availableProperties,
+      debug: {
+        databaseId,
+        resultsCount: response.results.length,
+      }
     };
   } catch (error) {
-    console.error('Error fetching settings from Notion:', error);
-    return { settings: null };
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Error fetching settings from Notion:', errorMessage, error);
+    return {
+      settings: null,
+      debug: {
+        databaseId,
+        resultsCount: -1,
+        error: errorMessage,
+      }
+    };
   }
 }
 
@@ -205,6 +235,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       settings: result.settings || DEFAULT_SETTINGS,
       availableProperties: result.availableProperties || [],
+      debug: result.debug,
     });
   }
 
