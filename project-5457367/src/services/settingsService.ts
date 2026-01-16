@@ -2,6 +2,7 @@
  * 設定をNotionに同期するサービス
  */
 
+// スケジュール設定
 export interface ScheduleSettings {
   postTimes: string[];
   activeDays: string[];
@@ -9,10 +10,26 @@ export interface ScheduleSettings {
   enabled: boolean;
 }
 
+// 投稿生成設定（フル）
+export interface PostSettings extends ScheduleSettings {
+  persona?: string;
+  tone?: string;
+  contentDirection?: string;
+  maxLength?: number;
+  useEmoji?: boolean;
+  useHashtags?: boolean;
+  hashtagRules?: string;
+  mustInclude?: string;
+  mustExclude?: string;
+  structureTemplate?: string;
+  referenceInfo?: string;
+  examplePosts?: string;
+}
+
 /**
- * 設定をNotionに保存
+ * 設定をNotionに保存（フル設定対応）
  */
-export async function saveSettingsToNotion(settings: ScheduleSettings): Promise<boolean> {
+export async function saveSettingsToNotion(settings: PostSettings): Promise<boolean> {
   try {
     const response = await fetch('/api/settings', {
       method: 'POST',
@@ -23,7 +40,8 @@ export async function saveSettingsToNotion(settings: ScheduleSettings): Promise<
     });
 
     if (!response.ok) {
-      console.error('Failed to save settings to Notion');
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Failed to save settings to Notion:', errorData);
       return false;
     }
 
@@ -39,7 +57,7 @@ export async function saveSettingsToNotion(settings: ScheduleSettings): Promise<
 /**
  * Notionから設定を取得
  */
-export async function loadSettingsFromNotion(): Promise<ScheduleSettings | null> {
+export async function loadSettingsFromNotion(): Promise<PostSettings | null> {
   try {
     const response = await fetch('/api/settings');
 

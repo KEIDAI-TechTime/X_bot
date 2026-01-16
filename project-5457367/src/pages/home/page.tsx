@@ -104,7 +104,7 @@ export default function HomePage() {
   // 初回レンダリングかどうかを追跡
   const isFirstRender = useRef(true);
 
-  // スケジュール関連の設定が変更されたらNotionに同期
+  // 設定が変更されたらNotionに同期
   useEffect(() => {
     // 初回レンダリング時はスキップ
     if (isFirstRender.current) {
@@ -115,10 +115,24 @@ export default function HomePage() {
     // デバウンス: 連続した変更をまとめる
     const timeoutId = setTimeout(() => {
       saveSettingsToNotion({
+        // スケジュール関連
         postTimes: settings.postTimes,
         activeDays: settings.activeDays,
         topics: settings.topics,
         enabled: settings.enabled,
+        // 投稿生成関連
+        persona: settings.persona,
+        tone: settings.tone,
+        contentDirection: settings.contentDirection,
+        maxLength: settings.maxLength,
+        useEmoji: settings.useEmoji,
+        useHashtags: settings.useHashtags,
+        hashtagRules: settings.hashtagRules,
+        mustInclude: settings.mustInclude,
+        mustExclude: settings.mustExclude,
+        structureTemplate: settings.structureTemplate,
+        referenceInfo: settings.referenceInfo,
+        examplePosts: settings.examplePosts,
       }).then(success => {
         if (success) {
           console.log('Settings synced to Notion');
@@ -127,7 +141,24 @@ export default function HomePage() {
     }, 1000); // 1秒後に保存
 
     return () => clearTimeout(timeoutId);
-  }, [settings.postTimes, settings.activeDays, settings.topics, settings.enabled]);
+  }, [
+    settings.postTimes,
+    settings.activeDays,
+    settings.topics,
+    settings.enabled,
+    settings.persona,
+    settings.tone,
+    settings.contentDirection,
+    settings.maxLength,
+    settings.useEmoji,
+    settings.useHashtags,
+    settings.hashtagRules,
+    settings.mustInclude,
+    settings.mustExclude,
+    settings.structureTemplate,
+    settings.referenceInfo,
+    settings.examplePosts,
+  ]);
 
   const handleToggleEnabled = () => {
     setSettings(prev => ({ ...prev, enabled: !prev.enabled }));
