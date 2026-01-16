@@ -3,28 +3,46 @@ import { TwitterApi } from 'twitter-api-v2';
 import Anthropic from '@anthropic-ai/sdk';
 import { Client } from '@notionhq/client';
 
-// スケジュール設定の型
-interface ScheduleSettings {
+// 設定の型（スケジュール + 投稿生成）
+interface PostSettings {
+  // スケジュール関連
   postTimes: string[];
   activeDays: string[];
   topics: string[];
   enabled: boolean;
+  // 投稿生成関連
+  persona: string;
+  tone: string;
+  contentDirection: string;
+  maxLength: number;
+  useEmoji: boolean;
+  useHashtags: boolean;
+  hashtagRules: string;
+  mustInclude: string;
+  mustExclude: string;
+  structureTemplate: string;
+  referenceInfo: string;
+  examplePosts: string;
 }
 
 // デフォルト設定
-const DEFAULT_SETTINGS: ScheduleSettings = {
+const DEFAULT_SETTINGS: PostSettings = {
   postTimes: ['07:00', '12:00', '19:00'],
   activeDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
   topics: ['AI・機械学習の最新動向', 'クラウドサービス・SaaS', 'プログラミング・開発ツール'],
   enabled: true,
-};
-
-// 投稿設定
-const POST_CONFIG = {
   persona: 'テクノロジーとビジネスに詳しい、フレンドリーな専門家',
   tone: 'カジュアル',
   contentDirection: '最新のAIトレンドやビジネスに役立つ情報を、初心者にも分かりやすく解説',
   maxLength: 280,
+  useEmoji: true,
+  useHashtags: true,
+  hashtagRules: '関連するハッシュタグを1-2個追加',
+  mustInclude: '',
+  mustExclude: '',
+  structureTemplate: '',
+  referenceInfo: '',
+  examplePosts: '',
 };
 
 // 曜日マッピング
@@ -32,8 +50,23 @@ const DAY_MAP: Record<number, string> = {
   0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat'
 };
 
+// テキストプロパティを取得するヘルパー
+function getTextProperty(properties: any, key: string, defaultValue: string): string {
+  return properties[key]?.rich_text?.[0]?.plain_text || defaultValue;
+}
+
+// 数値プロパティを取得するヘルパー
+function getNumberProperty(properties: any, key: string, defaultValue: number): number {
+  return properties[key]?.number ?? defaultValue;
+}
+
+// チェックボックスプロパティを取得するヘルパー
+function getCheckboxProperty(properties: any, key: string, defaultValue: boolean): boolean {
+  return properties[key]?.checkbox ?? defaultValue;
+}
+
 // Notionから設定を取得
-async function getSettingsFromNotion(): Promise<ScheduleSettings> {
+async function getSettingsFromNotion(): Promise<PostSettings> {
   const notionApiKey = process.env.NOTION_API_KEY;
   const settingsDatabaseId = process.env.NOTION_SETTINGS_DATABASE_ID;
 
@@ -62,13 +95,11 @@ async function getSettingsFromNotion(): Promise<ScheduleSettings> {
     const postTimesText = properties.postTimes?.rich_text?.[0]?.plain_text;
     if (postTimesText) {
       try {
-        // JSON配列として解析を試みる
         const parsed = JSON.parse(postTimesText);
         if (Array.isArray(parsed)) {
           postTimes = parsed;
         }
       } catch {
-        // カンマ区切りとして解析
         postTimes = postTimesText.split(',').map((t: string) => t.trim());
       }
     }
@@ -95,14 +126,26 @@ async function getSettingsFromNotion(): Promise<ScheduleSettings> {
       }
     }
 
-    // enabled: チェックボックス
-    const enabled = properties.enabled?.checkbox ?? true;
-
-    const settings: ScheduleSettings = {
+    // 投稿生成関連の設定を取得
+    const settings: PostSettings = {
+      // スケジュール関連
       postTimes,
       activeDays,
       topics,
-      enabled,
+      enabled: getCheckboxProperty(properties, 'enabled', DEFAULT_SETTINGS.enabled),
+      // 投稿生成関連
+      persona: getTextProperty(properties, 'persona', DEFAULT_SETTINGS.persona),
+      tone: getTextProperty(properties, 'tone', DEFAULT_SETTINGS.tone),
+      contentDirection: getTextProperty(properties, 'contentDirection', DEFAULT_SETTINGS.contentDirection),
+      maxLength: getNumberProperty(properties, 'maxLength', DEFAULT_SETTINGS.maxLength),
+      useEmoji: getCheckboxProperty(properties, 'useEmoji', DEFAULT_SETTINGS.useEmoji),
+      useHashtags: getCheckboxProperty(properties, 'useHashtags', DEFAULT_SETTINGS.useHashtags),
+      hashtagRules: getTextProperty(properties, 'hashtagRules', DEFAULT_SETTINGS.hashtagRules),
+      mustInclude: getTextProperty(properties, 'mustInclude', DEFAULT_SETTINGS.mustInclude),
+      mustExclude: getTextProperty(properties, 'mustExclude', DEFAULT_SETTINGS.mustExclude),
+      structureTemplate: getTextProperty(properties, 'structureTemplate', DEFAULT_SETTINGS.structureTemplate),
+      referenceInfo: getTextProperty(properties, 'referenceInfo', DEFAULT_SETTINGS.referenceInfo),
+      examplePosts: getTextProperty(properties, 'examplePosts', DEFAULT_SETTINGS.examplePosts),
     };
 
     console.log('Settings loaded from Notion:', settings);
@@ -114,7 +157,7 @@ async function getSettingsFromNotion(): Promise<ScheduleSettings> {
 }
 
 // 現在時刻がスケジュールに含まれるかチェック
-function isScheduledTime(settings: ScheduleSettings): { scheduled: boolean; reason: string } {
+function isScheduledTime(settings: PostSettings): { scheduled: boolean; reason: string } {
   if (!settings.enabled) {
     return { scheduled: false, reason: 'Auto-posting is disabled' };
   }
@@ -157,14 +200,14 @@ function selectRandomTopic(topics: string[]): string {
 }
 
 // AIプロンプトを生成
-function buildPrompt(topic: string): string {
-  return `あなたはX（旧Twitter）の投稿を作成するアシスタントです。
+function buildPrompt(topic: string, settings: PostSettings): string {
+  let prompt = `あなたはX（旧Twitter）の投稿を作成するアシスタントです。
 
-【ペルソナ】${POST_CONFIG.persona}
-【トーン】${POST_CONFIG.tone}
+【ペルソナ】${settings.persona}
+【トーン】${settings.tone}
 【トピック】${topic}
-【方向性】${POST_CONFIG.contentDirection}
-【文字数】${POST_CONFIG.maxLength}文字以内
+【方向性】${settings.contentDirection}
+【文字数】${settings.maxLength}文字以内
 
 以下のポイントを意識して投稿を作成してください:
 - 1行目で読者の興味を引く（質問、驚き、共感など）
@@ -172,11 +215,50 @@ function buildPrompt(topic: string): string {
 - 漢字を使いすぎない（ひらがな70%:漢字30%程度）
 - 同じ語尾を続けない（「です」「です」など）
 - URLリンクは含めない
-- ネガティブな内容は避ける
-- 適切な絵文字を1-2個使用
-- 関連するハッシュタグを1-2個追加
+- ネガティブな内容は避ける`;
 
-投稿文のみを出力してください（説明や補足は不要）。`;
+  // 絵文字設定
+  if (settings.useEmoji) {
+    prompt += `\n- 適切な絵文字を1-2個使用`;
+  } else {
+    prompt += `\n- 絵文字は使用しない`;
+  }
+
+  // ハッシュタグ設定
+  if (settings.useHashtags) {
+    prompt += `\n- ${settings.hashtagRules || '関連するハッシュタグを1-2個追加'}`;
+  } else {
+    prompt += `\n- ハッシュタグは使用しない`;
+  }
+
+  // 含める要素
+  if (settings.mustInclude) {
+    prompt += `\n\n【必ず含める要素】\n${settings.mustInclude}`;
+  }
+
+  // 避ける要素
+  if (settings.mustExclude) {
+    prompt += `\n\n【避ける要素】\n${settings.mustExclude}`;
+  }
+
+  // 構成テンプレート
+  if (settings.structureTemplate) {
+    prompt += `\n\n【構成テンプレート】\n${settings.structureTemplate}`;
+  }
+
+  // 参考情報
+  if (settings.referenceInfo) {
+    prompt += `\n\n【参考情報】\n${settings.referenceInfo}`;
+  }
+
+  // 参考投稿例
+  if (settings.examplePosts) {
+    prompt += `\n\n【参考投稿例】\n${settings.examplePosts}`;
+  }
+
+  prompt += `\n\n投稿文のみを出力してください（説明や補足は不要）。`;
+
+  return prompt;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -228,7 +310,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // AIで投稿内容を生成
     const anthropic = new Anthropic({ apiKey: anthropicKey });
-    const prompt = buildPrompt(topic);
+    const prompt = buildPrompt(topic, settings);
 
     const aiResponse = await anthropic.messages.create({
       model: 'claude-opus-4-5-20251101',
@@ -245,9 +327,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const postContent = content.text.trim();
     console.log('Generated content:', postContent);
 
-    // 文字数チェック
-    if (postContent.length > 280) {
-      console.warn('Content exceeds 280 characters, truncating...');
+    // 文字数チェック（Xの最大文字数は280）
+    const maxTweetLength = Math.min(settings.maxLength, 280);
+    if (postContent.length > maxTweetLength) {
+      console.warn(`Content exceeds ${maxTweetLength} characters, truncating...`);
     }
 
     // Xに投稿
@@ -258,7 +341,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       accessSecret: xAccessSecret,
     });
 
-    const tweetResult = await twitterClient.v2.tweet(postContent.slice(0, 280));
+    const tweetResult = await twitterClient.v2.tweet(postContent.slice(0, maxTweetLength));
 
     console.log('Tweet posted successfully:', tweetResult.data.id);
 
