@@ -7,7 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 
 // 環境変数からAPIキーを取得
 const getAnthropicClient = (): Anthropic | null => {
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY || import.meta.env.ANTHROPIC_API_KEY;
 
   if (!apiKey) {
     console.warn('VITE_ANTHROPIC_API_KEY が設定されていません');
@@ -118,7 +118,7 @@ ${improvements.map((imp, i) => `${i + 1}. ${imp}`).join('\n')}
  * APIキーが設定されているかチェック
  */
 export function isAIConfigured(): boolean {
-  return !!import.meta.env.VITE_ANTHROPIC_API_KEY;
+  return !!(import.meta.env.VITE_ANTHROPIC_API_KEY || import.meta.env.ANTHROPIC_API_KEY);
 }
 
 /**
