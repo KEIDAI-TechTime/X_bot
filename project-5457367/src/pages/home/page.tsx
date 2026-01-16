@@ -7,6 +7,7 @@ import ScheduleTab from './components/ScheduleTab';
 import HistoryTab from './components/HistoryTab';
 import TestTab from './components/TestTab';
 import StatusTab from './components/StatusTab';
+import AnalyticsTab from './components/AnalyticsTab';
 import { mockPostSettings, type Settings } from '../../mocks/postSettings';
 import { saveSettingsToNotion } from '../../services/settingsService';
 
@@ -19,7 +20,7 @@ interface PostHistoryItem {
   errorMessage?: string;
 }
 
-type TabType = 'settings' | 'schedule' | 'history' | 'test' | 'status';
+type TabType = 'settings' | 'schedule' | 'history' | 'test' | 'status' | 'analytics';
 
 const SETTINGS_STORAGE_KEY = 'x-auto-poster-settings';
 
@@ -270,6 +271,8 @@ export default function HomePage() {
         return <TestTab settings={settings} />;
       case 'status':
         return <StatusTab status={status} />;
+      case 'analytics':
+        return <AnalyticsTab />;
       default:
         return <SettingsTab settings={settings} setSettings={setSettings} />;
     }
