@@ -10,6 +10,7 @@ import {
 } from '../../../services/postValidator';
 import { buildPromptFromSettings } from '../../../services/aiPromptBuilder';
 import { generatePostWithAI, isAIConfigured } from '../../../services/aiService';
+import { postToX } from '../../../services/xPostService';
 import { CONTENT_CATEGORIES, CONTENT_FORMATS } from '../../../config/xStrategy';
 import type { ValidationResult } from '../../../types/xStrategy';
 
@@ -21,6 +22,8 @@ export default function TestTab({ settings }: TestTabProps) {
   const [generatedPost, setGeneratedPost] = useState('');
   const [selectedTopic, setSelectedTopic] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isPosting, setIsPosting] = useState(false);
+  const [postResult, setPostResult] = useState<{ success: boolean; message: string; tweetId?: string } | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [hasImage, setHasImage] = useState(false);
   const [useAI, setUseAI] = useState(true);
@@ -150,9 +153,38 @@ export default function TestTab({ settings }: TestTabProps) {
     setIsGenerating(false);
   };
 
-  const handlePostNow = () => {
-    if (confirm('この内容で今すぐ投稿しますか？')) {
-      alert('投稿しました！');
+  const handlePostNow = async () => {
+    if (!generatedPost) return;
+
+    if (!confirm('この内容で今すぐXに投稿しますか？')) {
+      return;
+    }
+
+    setIsPosting(true);
+    setPostResult(null);
+
+    try {
+      const result = await postToX(generatedPost);
+
+      if (result.success) {
+        setPostResult({
+          success: true,
+          message: '投稿が完了しました！',
+          tweetId: result.tweetId,
+        });
+      } else {
+        setPostResult({
+          success: false,
+          message: result.error || '投稿に失敗しました',
+        });
+      }
+    } catch (error) {
+      setPostResult({
+        success: false,
+        message: error instanceof Error ? error.message : '予期しないエラーが発生しました',
+      });
+    } finally {
+      setIsPosting(false);
     }
   };
 
@@ -419,19 +451,54 @@ export default function TestTab({ settings }: TestTabProps) {
                   </span>
                 </div>
 
+                {/* 投稿結果表示 */}
+                {postResult && (
+                  <div className={`p-4 rounded-lg ${postResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                    <div className="flex items-start gap-3">
+                      <span className="text-xl">{postResult.success ? '✅' : '❌'}</span>
+                      <div>
+                        <p className={`font-medium ${postResult.success ? 'text-green-800' : 'text-red-800'}`}>
+                          {postResult.message}
+                        </p>
+                        {postResult.tweetId && (
+                          <a
+                            href={`https://x.com/i/web/status/${postResult.tweetId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-blue-600 hover:underline mt-1 inline-block"
+                          >
+                            投稿を確認する →
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-3">
                   <button
                     onClick={handleGenerate}
-                    disabled={isGenerating}
+                    disabled={isGenerating || isPosting}
                     className="flex-1 h-12 border-2 border-gray-300 text-gray-700 rounded-lg font-medium hover:border-[#4F46E5] hover:text-[#4F46E5] transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50"
                   >
                     再生成
                   </button>
                   <button
                     onClick={handlePostNow}
-                    className="flex-1 h-12 bg-[#4F46E5] text-white rounded-lg font-medium hover:bg-[#4338CA] transition-colors cursor-pointer whitespace-nowrap"
+                    disabled={isPosting || !generatedPost}
+                    className="flex-1 h-12 bg-[#4F46E5] text-white rounded-lg font-medium hover:bg-[#4338CA] transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    今すぐ投稿
+                    {isPosting ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        投稿中...
+                      </span>
+                    ) : (
+                      '今すぐ投稿'
+                    )}
                   </button>
                 </div>
               </div>

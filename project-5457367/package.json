@@ -4,6 +4,7 @@
     "@stripe/react-stripe-js": "4.0.2",
     "@supabase/supabase-js": "2.57.4",
     "@tanstack/react-query": "^5.87.4",
+    "@vercel/node": "^5.5.22",
     "date-fns": "^4.1.0",
     "firebase": "12.0.0",
     "i18next": "25.4.1",
@@ -13,7 +14,8 @@
     "react-dom": "^19.1.0",
     "react-i18next": "^15.6.0",
     "react-router-dom": "^7.6.3",
-    "recharts": "3.2.0"
+    "recharts": "3.2.0",
+    "twitter-api-v2": "^1.29.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.1",
