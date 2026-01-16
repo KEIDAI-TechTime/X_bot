@@ -74,16 +74,39 @@ async function getTweetMetrics(
 
       if (response.data) {
         for (const tweet of response.data) {
-          const metrics = tweet.public_metrics;
-          if (metrics) {
+          const publicMetrics = tweet.public_metrics;
+          const organicMetrics = (tweet as any).organic_metrics;
+          const nonPublicMetrics = (tweet as any).non_public_metrics;
+
+          // インプレッションの取得（複数のソースから優先順位で取得）
+          // 1. organic_metrics（自分のツイートで最も正確）
+          // 2. non_public_metrics（非公開メトリクス）
+          // 3. public_metrics（一部のAPIプランで利用可能）
+          const impressions =
+            organicMetrics?.impression_count ??
+            nonPublicMetrics?.impression_count ??
+            (publicMetrics as any)?.impression_count ??
+            0;
+
+          if (publicMetrics) {
             metricsMap.set(tweet.id, {
-              likes: metrics.like_count || 0,
-              retweets: metrics.retweet_count || 0,
-              replies: metrics.reply_count || 0,
-              quotes: metrics.quote_count || 0,
-              impressions: (tweet as any).organic_metrics?.impression_count ||
-                           (tweet as any).non_public_metrics?.impression_count || 0,
+              likes: publicMetrics.like_count || 0,
+              retweets: publicMetrics.retweet_count || 0,
+              replies: publicMetrics.reply_count || 0,
+              quotes: publicMetrics.quote_count || 0,
+              impressions,
             });
+
+            // デバッグログ（最初の1件のみ詳細出力）
+            if (metricsMap.size === 1) {
+              console.log('Sample tweet metrics response:', {
+                tweetId: tweet.id,
+                publicMetrics,
+                organicMetrics: organicMetrics || 'not available',
+                nonPublicMetrics: nonPublicMetrics || 'not available',
+                extractedImpressions: impressions,
+              });
+            }
           }
         }
       }
@@ -236,6 +259,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const metricsMap = await getTweetMetrics(twitterClient, tweetIds);
 
     let collectedCount = 0;
+    let totalImpressions = 0;
+    let totalLikes = 0;
+    let postsWithImpressions = 0;
 
     // 各投稿のメトリクスを保存
     for (const post of posts) {
@@ -261,17 +287,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           );
         }
 
+        // 診断用の集計
+        totalImpressions += metrics.impressions;
+        totalLikes += metrics.likes;
+        if (metrics.impressions > 0) {
+          postsWithImpressions++;
+        }
+
         collectedCount++;
       }
     }
 
     console.log(`Collected metrics for ${collectedCount} posts`);
+    console.log(`Total impressions: ${totalImpressions}, Total likes: ${totalLikes}`);
+    console.log(`Posts with impressions > 0: ${postsWithImpressions}/${collectedCount}`);
+
+    // APIアクセスレベルに関する診断情報
+    const diagnostics = {
+      postsWithImpressions,
+      postsWithoutImpressions: collectedCount - postsWithImpressions,
+      totalImpressions,
+      totalLikes,
+      impressionsAvailable: postsWithImpressions > 0,
+      note: postsWithImpressions === 0 && collectedCount > 0
+        ? 'インプレッション数が取得できていません。X API Basicプラン以上が必要です。'
+        : undefined,
+    };
 
     return res.status(200).json({
       success: true,
       collected: collectedCount,
       total: posts.length,
       timestamp: new Date().toISOString(),
+      diagnostics,
     });
   } catch (error) {
     console.error('Error collecting metrics:', error);
