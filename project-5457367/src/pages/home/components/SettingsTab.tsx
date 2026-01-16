@@ -14,6 +14,7 @@ import {
   ALGORITHM_SCORES,
   STRATEGY_CHECKLIST,
 } from '../../../config/xStrategy';
+import { saveSettingsToNotion } from '../../../services/settingsService';
 
 interface SettingsTabProps {
   settings: Settings;
@@ -24,6 +25,8 @@ export default function SettingsTab({ settings, setSettings }: SettingsTabProps)
   const toneOptions = ['カジュアル', 'フォーマル', 'ユーモア', 'カスタム'];
   const [newTopic, setNewTopic] = useState('');
   const [activeStrategyTab, setActiveStrategyTab] = useState<'category' | 'format' | 'firstline' | 'algorithm'>('category');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   const handleAddTopic = () => {
     if (newTopic.trim() && !settings.topics.includes(newTopic.trim())) {
@@ -61,8 +64,44 @@ export default function SettingsTab({ settings, setSettings }: SettingsTabProps)
     }
   };
 
-  const handleSave = () => {
-    alert('設定を保存しました');
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveStatus('idle');
+
+    try {
+      const success = await saveSettingsToNotion({
+        // スケジュール関連
+        postTimes: settings.postTimes,
+        activeDays: settings.activeDays,
+        topics: settings.topics,
+        enabled: settings.enabled,
+        // 投稿生成関連
+        persona: settings.persona,
+        tone: settings.tone,
+        contentDirection: settings.contentDirection,
+        maxLength: settings.maxLength,
+        useEmoji: settings.useEmoji,
+        useHashtags: settings.useHashtags,
+        hashtagRules: settings.hashtagRules,
+        mustInclude: settings.mustInclude,
+        mustExclude: settings.mustExclude,
+        structureTemplate: settings.structureTemplate,
+        referenceInfo: settings.referenceInfo,
+        examplePosts: settings.examplePosts,
+      });
+
+      if (success) {
+        setSaveStatus('success');
+        setTimeout(() => setSaveStatus('idle'), 3000);
+      } else {
+        setSaveStatus('error');
+      }
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+      setSaveStatus('error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -744,13 +783,28 @@ export default function SettingsTab({ settings, setSettings }: SettingsTabProps)
         </div>
       </section>
 
-      <div className="flex justify-center pt-4">
+      <div className="flex flex-col items-center pt-4 gap-2">
         <button
           onClick={handleSave}
-          className="w-60 h-14 bg-gradient-to-r from-[#4F46E5] to-[#7C3AED] text-white rounded-lg font-semibold text-base hover:scale-105 transition-transform duration-200 cursor-pointer whitespace-nowrap"
+          disabled={isSaving}
+          className={`w-60 h-14 rounded-lg font-semibold text-base transition-all duration-200 whitespace-nowrap ${
+            isSaving
+              ? 'bg-gray-400 cursor-not-allowed'
+              : saveStatus === 'success'
+              ? 'bg-green-500 hover:bg-green-600'
+              : saveStatus === 'error'
+              ? 'bg-red-500 hover:bg-red-600'
+              : 'bg-gradient-to-r from-[#4F46E5] to-[#7C3AED] hover:scale-105 cursor-pointer'
+          } text-white`}
         >
-          設定を保存
+          {isSaving ? '保存中...' : saveStatus === 'success' ? '保存しました!' : saveStatus === 'error' ? '保存に失敗しました' : '設定を保存'}
         </button>
+        {saveStatus === 'success' && (
+          <p className="text-sm text-green-600">Notionに設定が同期されました</p>
+        )}
+        {saveStatus === 'error' && (
+          <p className="text-sm text-red-600">保存に失敗しました。もう一度お試しください。</p>
+        )}
       </div>
     </div>
   );
