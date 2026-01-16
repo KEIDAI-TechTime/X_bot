@@ -25,7 +25,7 @@ export default function TestTab({ settings }: TestTabProps) {
   const [hasImage, setHasImage] = useState(false);
   const [useAI, setUseAI] = useState(true);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [tokenUsage, setTokenUsage] = useState<{ prompt: number; completion: number; total: number } | null>(null);
+  const [tokenUsage, setTokenUsage] = useState<{ input: number; output: number } | null>(null);
 
   const aiConfigured = isAIConfigured();
 
@@ -131,9 +131,8 @@ export default function TestTab({ settings }: TestTabProps) {
         setGeneratedPost(result.content);
         if (result.usage) {
           setTokenUsage({
-            prompt: result.usage.promptTokens,
-            completion: result.usage.completionTokens,
-            total: result.usage.totalTokens,
+            input: result.usage.inputTokens,
+            output: result.usage.outputTokens,
           });
         }
       } else {
@@ -259,16 +258,16 @@ export default function TestTab({ settings }: TestTabProps) {
                 <p className="font-medium text-gray-700 mb-2">トークン使用量</p>
                 <div className="grid grid-cols-3 gap-2 text-xs text-gray-600">
                   <div>
-                    <span className="block text-gray-400">プロンプト</span>
-                    <span className="font-mono">{tokenUsage.prompt}</span>
+                    <span className="block text-gray-400">入力</span>
+                    <span className="font-mono">{tokenUsage.input}</span>
                   </div>
                   <div>
-                    <span className="block text-gray-400">生成</span>
-                    <span className="font-mono">{tokenUsage.completion}</span>
+                    <span className="block text-gray-400">出力</span>
+                    <span className="font-mono">{tokenUsage.output}</span>
                   </div>
                   <div>
                     <span className="block text-gray-400">合計</span>
-                    <span className="font-mono font-medium">{tokenUsage.total}</span>
+                    <span className="font-mono font-medium">{tokenUsage.input + tokenUsage.output}</span>
                   </div>
                 </div>
               </div>

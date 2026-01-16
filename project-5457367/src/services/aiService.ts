@@ -1,20 +1,20 @@
 /**
  * AI連携サービス
- * OpenAI APIを使用して投稿文を生成する
+ * Anthropic Claude APIを使用して投稿文を生成する
  */
 
-import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 
 // 環境変数からAPIキーを取得
-const getOpenAIClient = (): OpenAI | null => {
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+const getAnthropicClient = (): Anthropic | null => {
+  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
 
   if (!apiKey) {
-    console.warn('VITE_OPENAI_API_KEY が設定されていません');
+    console.warn('VITE_ANTHROPIC_API_KEY が設定されていません');
     return null;
   }
 
-  return new OpenAI({
+  return new Anthropic({
     apiKey,
     dangerouslyAllowBrowser: true, // 開発用。本番環境ではバックエンド経由で呼び出すこと
   });
@@ -31,57 +31,53 @@ export interface GeneratePostResult {
   content: string;
   error?: string;
   usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
+    inputTokens: number;
+    outputTokens: number;
   };
 }
 
 /**
- * OpenAI APIを使用して投稿文を生成
+ * Claude APIを使用して投稿文を生成
  */
 export async function generatePostWithAI(
   options: GeneratePostOptions
 ): Promise<GeneratePostResult> {
   const { prompt, maxTokens = 500, temperature = 0.7 } = options;
 
-  const client = getOpenAIClient();
+  const client = getAnthropicClient();
 
   if (!client) {
     return {
       success: false,
       content: '',
-      error: 'OpenAI APIキーが設定されていません。.envファイルにVITE_OPENAI_API_KEYを設定してください。',
+      error: 'Anthropic APIキーが設定されていません。.envファイルにVITE_ANTHROPIC_API_KEYを設定してください。',
     };
   }
 
   try {
-    const response = await client.chat.completions.create({
-      model: 'gpt-4o-mini', // コスト効率の良いモデル
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: maxTokens,
       messages: [
-        {
-          role: 'system',
-          content: 'あなたはX（旧Twitter）の投稿を作成する専門家です。指示に従って、バズりやすい投稿文を作成してください。投稿文のみを出力し、余計な説明は不要です。',
-        },
         {
           role: 'user',
           content: prompt,
         },
       ],
-      max_tokens: maxTokens,
-      temperature,
+      system: 'あなたはX（旧Twitter）の投稿を作成する専門家です。指示に従って、バズりやすい投稿文を作成してください。投稿文のみを出力し、余計な説明は不要です。',
     });
 
-    const content = response.choices[0]?.message?.content?.trim() || '';
+    // レスポンスからテキストを抽出
+    const textContent = response.content.find(block => block.type === 'text');
+    const content = textContent && 'text' in textContent ? textContent.text.trim() : '';
 
     return {
       success: true,
       content,
-      usage: response.usage ? {
-        promptTokens: response.usage.prompt_tokens,
-        completionTokens: response.usage.completion_tokens,
-        totalTokens: response.usage.total_tokens,
-      } : undefined,
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      },
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました';
@@ -122,14 +118,14 @@ ${improvements.map((imp, i) => `${i + 1}. ${imp}`).join('\n')}
  * APIキーが設定されているかチェック
  */
 export function isAIConfigured(): boolean {
-  return !!import.meta.env.VITE_OPENAI_API_KEY;
+  return !!import.meta.env.VITE_ANTHROPIC_API_KEY;
 }
 
 /**
  * 利用可能なモデル一覧
  */
 export const AVAILABLE_MODELS = [
-  { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'コスト効率が良く、高速' },
-  { id: 'gpt-4o', name: 'GPT-4o', description: '最高品質、コスト高め' },
-  { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: '低コスト、基本的な品質' },
+  { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', description: 'バランスの良いモデル' },
+  { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: '高速・低コスト' },
+  { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: '高品質' },
 ] as const;
