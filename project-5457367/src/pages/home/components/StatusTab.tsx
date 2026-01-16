@@ -14,7 +14,7 @@ interface Activity {
 interface StatusTabProps {
   status: {
     totalPosts: number;
-    successRate: number;
+    successRate: number | null;
     todayPosts: number;
     nextPostTime: string;
     isRunning: boolean;
@@ -63,7 +63,9 @@ export default function StatusTab({ status }: StatusTabProps) {
           <div className="text-sm text-gray-600">総投稿数</div>
         </div>
         <div className="bg-white rounded-xl p-8 shadow-sm text-center">
-          <div className="text-5xl font-bold text-green-600 mb-2">{status.successRate}%</div>
+          <div className="text-5xl font-bold text-green-600 mb-2">
+            {status.successRate !== null ? `${status.successRate}%` : '-'}
+          </div>
           <div className="text-sm text-gray-600">成功率</div>
         </div>
         <div className="bg-white rounded-xl p-8 shadow-sm text-center">
