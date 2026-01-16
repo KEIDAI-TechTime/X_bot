@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import SettingsTab from './components/SettingsTab';
@@ -12,6 +12,48 @@ import { mockPostSettings, mockStatus, type Settings } from '../../mocks/postSet
 type TabType = 'settings' | 'schedule' | 'history' | 'test' | 'status';
 
 const SETTINGS_STORAGE_KEY = 'x-auto-poster-settings';
+
+// 曜日のマッピング（0=日曜日, 1=月曜日, ...）
+const DAY_MAP: Record<string, number> = {
+  sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6
+};
+
+// 次回投稿時刻を計算
+const calculateNextPostTime = (postTimes: string[], activeDays: string[]): string => {
+  if (postTimes.length === 0 || activeDays.length === 0) {
+    return new Date().toISOString();
+  }
+
+  const now = new Date();
+  const activeDayNumbers = activeDays.map(d => DAY_MAP[d]).filter(d => d !== undefined);
+
+  // 今日から7日間をチェック
+  for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+    const checkDate = new Date(now);
+    checkDate.setDate(now.getDate() + dayOffset);
+    const dayOfWeek = checkDate.getDay();
+
+    // この曜日がアクティブかチェック
+    if (activeDayNumbers.includes(dayOfWeek)) {
+      // この日の投稿時刻をチェック
+      for (const timeStr of postTimes.sort()) {
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        const postTime = new Date(checkDate);
+        postTime.setHours(hours, minutes, 0, 0);
+
+        // 未来の時刻なら次回投稿時刻として返す
+        if (postTime > now) {
+          return postTime.toISOString();
+        }
+      }
+    }
+  }
+
+  // 見つからない場合は翌週の最初のアクティブ日の最初の時刻
+  const nextWeek = new Date(now);
+  nextWeek.setDate(now.getDate() + 7);
+  return nextWeek.toISOString();
+};
 
 // localStorageから設定を読み込む
 const loadSettings = (): Settings => {
@@ -40,7 +82,18 @@ const saveSettings = (settings: Settings): void => {
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<TabType>('settings');
   const [settings, setSettings] = useState<Settings>(loadSettings);
-  const [status, setStatus] = useState(mockStatus);
+
+  // スケジュール設定から次回投稿時刻を計算
+  const nextPostTime = useMemo(() => {
+    return calculateNextPostTime(settings.postTimes, settings.activeDays);
+  }, [settings.postTimes, settings.activeDays]);
+
+  // statusをsettingsと連動させる
+  const status = useMemo(() => ({
+    ...mockStatus,
+    nextPostTime,
+    isRunning: settings.enabled,
+  }), [nextPostTime, settings.enabled]);
 
   // 設定が変更されたらlocalStorageに保存
   useEffect(() => {
@@ -49,7 +102,6 @@ export default function HomePage() {
 
   const handleToggleEnabled = () => {
     setSettings(prev => ({ ...prev, enabled: !prev.enabled }));
-    setStatus(prev => ({ ...prev, isRunning: !prev.isRunning }));
   };
 
   const renderContent = () => {
