@@ -190,7 +190,7 @@ export default function TestTab({ settings }: TestTabProps) {
               </div>
               {!aiConfigured && (
                 <p className="text-xs text-yellow-600 mt-1">
-                  .envファイルにVITE_OPENAI_API_KEYを設定してください
+                  ANTHROPIC_API_KEYを設定してください
                 </p>
               )}
             </div>
