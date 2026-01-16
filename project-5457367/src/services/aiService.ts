@@ -56,7 +56,7 @@ export async function generatePostWithAI(
 
   try {
     const response = await client.messages.create({
-      model: 'claude-opus-4-20250514',
+      model: 'claude-opus-4-5-20251101',
       max_tokens: maxTokens,
       messages: [
         {
@@ -125,7 +125,7 @@ export function isAIConfigured(): boolean {
  * 利用可能なモデル一覧
  */
 export const AVAILABLE_MODELS = [
+  { id: 'claude-opus-4-5-20251101', name: 'Claude Opus 4.5', description: '最高品質・最新モデル' },
   { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', description: 'バランスの良いモデル' },
   { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', description: '高速・低コスト' },
-  { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: '高品質' },
 ] as const;
