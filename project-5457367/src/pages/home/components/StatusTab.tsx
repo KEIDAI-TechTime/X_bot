@@ -3,6 +3,14 @@ import { useState, useEffect } from 'react';
 import { format, differenceInSeconds } from 'date-fns';
 import { ja } from 'date-fns/locale';
 
+interface Activity {
+  time: string;
+  action: string;
+  icon: string;
+  color: string;
+  content?: string;
+}
+
 interface StatusTabProps {
   status: {
     totalPosts: number;
@@ -10,6 +18,7 @@ interface StatusTabProps {
     todayPosts: number;
     nextPostTime: string;
     isRunning: boolean;
+    recentActivities?: Activity[];
   };
 }
 
@@ -44,13 +53,7 @@ export default function StatusTab({ status }: StatusTabProps) {
     }
   };
 
-  const activities = [
-    { time: '2分前', action: '投稿を自動生成しました', icon: 'ri-magic-line', color: 'text-purple-600' },
-    { time: '5分前', action: 'スケジュールを確認しました', icon: 'ri-calendar-check-line', color: 'text-blue-600' },
-    { time: '2時間前', action: '投稿に成功しました', icon: 'ri-check-line', color: 'text-green-600' },
-    { time: '5時間前', action: '投稿に成功しました', icon: 'ri-check-line', color: 'text-green-600' },
-    { time: '8時間前', action: '設定を更新しました', icon: 'ri-settings-3-line', color: 'text-gray-600' },
-  ];
+  const activities = status.recentActivities || [];
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -81,24 +84,35 @@ export default function StatusTab({ status }: StatusTabProps) {
 
       <div className="bg-white rounded-xl p-8 shadow-sm">
         <h3 className="text-xl font-semibold text-gray-900 mb-6">最近のアクティビティ</h3>
-        <div className="space-y-4">
-          {activities.map((activity, index) => (
-            <div key={index} className="flex items-start gap-4">
-              <div className="relative">
-                <div className={`w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center ${activity.color}`}>
-                  <i className={`${activity.icon} text-xl`}></i>
+        {activities.length > 0 ? (
+          <div className="space-y-4">
+            {activities.map((activity, index) => (
+              <div key={index} className="flex items-start gap-4">
+                <div className="relative">
+                  <div className={`w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center ${activity.color}`}>
+                    <i className={`${activity.icon} text-xl`}></i>
+                  </div>
+                  {index < activities.length - 1 && (
+                    <div className="absolute left-1/2 top-10 w-0.5 h-8 bg-gray-200 -translate-x-1/2"></div>
+                  )}
                 </div>
-                {index < activities.length - 1 && (
-                  <div className="absolute left-1/2 top-10 w-0.5 h-8 bg-gray-200 -translate-x-1/2"></div>
-                )}
+                <div className="flex-1 pt-2">
+                  <div className="text-sm font-medium text-gray-900">{activity.action}</div>
+                  {activity.content && (
+                    <div className="text-xs text-gray-600 mt-0.5">{activity.content}</div>
+                  )}
+                  <div className="text-xs text-gray-500 mt-1">{activity.time}</div>
+                </div>
               </div>
-              <div className="flex-1 pt-2">
-                <div className="text-sm font-medium text-gray-900">{activity.action}</div>
-                <div className="text-xs text-gray-500 mt-1">{activity.time}</div>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            <i className="ri-inbox-line text-4xl mb-2"></i>
+            <p>まだアクティビティがありません</p>
+            <p className="text-sm mt-1">投稿を行うとここに履歴が表示されます</p>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-xl p-8 shadow-sm">
