@@ -2,6 +2,14 @@
  * 設定をNotionに同期するサービス
  */
 
+import type {
+  ContentCategory,
+  ContentFormat,
+  FirstLinePattern,
+  ProvenPattern,
+  WritingRules,
+} from '../types/xStrategy';
+
 // スケジュール設定
 export interface ScheduleSettings {
   postTimes: string[];
@@ -24,6 +32,16 @@ export interface PostSettings extends ScheduleSettings {
   structureTemplate?: string;
   referenceInfo?: string;
   examplePosts?: string;
+  // X投稿戦略設定
+  contentCategory?: ContentCategory;
+  contentFormat?: ContentFormat;
+  firstLinePattern?: FirstLinePattern;
+  provenPatterns?: ProvenPattern[];
+  writingRules?: WritingRules;
+  // アルゴリズム対策
+  avoidUrls?: boolean;
+  preferImages?: boolean;
+  targetDwellTime?: number;
 }
 
 /**
