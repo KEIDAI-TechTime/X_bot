@@ -118,7 +118,8 @@ export default function HomePage() {
   const stats = useMemo(() => {
     const totalPosts = postHistory.length;
     const successPosts = postHistory.filter(p => p.status === 'success').length;
-    const successRate = totalPosts > 0 ? Math.round((successPosts / totalPosts) * 1000) / 10 : 100;
+    // 投稿が0件の場合はnullを返す（表示側で「-」と表示）
+    const successRate = totalPosts > 0 ? Math.round((successPosts / totalPosts) * 1000) / 10 : null;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
