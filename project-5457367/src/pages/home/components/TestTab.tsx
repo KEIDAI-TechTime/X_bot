@@ -9,6 +9,7 @@ import {
   calculateKanjiRatio,
 } from '../../../services/postValidator';
 import { buildPromptFromSettings } from '../../../services/aiPromptBuilder';
+import { generatePostWithAI, isAIConfigured } from '../../../services/aiService';
 import { CONTENT_CATEGORIES, CONTENT_FORMATS } from '../../../config/xStrategy';
 import type { ValidationResult } from '../../../types/xStrategy';
 
@@ -22,6 +23,11 @@ export default function TestTab({ settings }: TestTabProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
   const [hasImage, setHasImage] = useState(false);
+  const [useAI, setUseAI] = useState(true);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [tokenUsage, setTokenUsage] = useState<{ prompt: number; completion: number; total: number } | null>(null);
+
+  const aiConfigured = isAIConfigured();
 
   // 最近の投稿から使用されたトピックを抽出
   const getRecentTopicsFromHistory = (): string[] => {
@@ -95,20 +101,54 @@ export default function TestTab({ settings }: TestTabProps) {
     return buildPromptFromSettings(settings, selectedTopic || settings.topic);
   }, [settings, selectedTopic]);
 
-  const handleGenerate = () => {
+  // モックデータから投稿を取得（フォールバック用）
+  const generateFromMock = (topic: string): string => {
+    const postsForTopic = mockPostsByTopic[topic] || mockPostsByTopic['default'];
+    const randomPost = postsForTopic[Math.floor(Math.random() * postsForTopic.length)];
+    return randomPost.content;
+  };
+
+  const handleGenerate = async () => {
     setIsGenerating(true);
-    setTimeout(() => {
-      const topic = selectNextTopic();
-      setSelectedTopic(topic);
+    setAiError(null);
+    setTokenUsage(null);
 
-      // トピックに対応する投稿を取得
-      const postsForTopic = mockPostsByTopic[topic] || mockPostsByTopic['default'];
-      const randomPost = postsForTopic[Math.floor(Math.random() * postsForTopic.length)];
+    const topic = selectNextTopic();
+    setSelectedTopic(topic);
 
-      setGeneratedPost(randomPost.content);
-      setHasImage(CONTENT_FORMATS.find(f => f.id === settings.contentFormat)?.hasImage || false);
-      setIsGenerating(false);
-    }, 1500);
+    // 戦略設定に基づいたプロンプトを生成
+    const prompt = buildPromptFromSettings(settings, topic);
+
+    if (useAI && aiConfigured) {
+      // AI APIを呼び出して投稿を生成
+      const result = await generatePostWithAI({
+        prompt,
+        maxTokens: 500,
+        temperature: 0.7,
+      });
+
+      if (result.success) {
+        setGeneratedPost(result.content);
+        if (result.usage) {
+          setTokenUsage({
+            prompt: result.usage.promptTokens,
+            completion: result.usage.completionTokens,
+            total: result.usage.totalTokens,
+          });
+        }
+      } else {
+        setAiError(result.error || 'AI生成に失敗しました');
+        // フォールバック: モックデータを使用
+        setGeneratedPost(generateFromMock(topic));
+      }
+    } else {
+      // モックデータを使用（AI未設定時）
+      await new Promise(resolve => setTimeout(resolve, 500)); // 少し待機
+      setGeneratedPost(generateFromMock(topic));
+    }
+
+    setHasImage(CONTENT_FORMATS.find(f => f.id === settings.contentFormat)?.hasImage || false);
+    setIsGenerating(false);
   };
 
   const handlePostNow = () => {
@@ -141,6 +181,37 @@ export default function TestTab({ settings }: TestTabProps) {
           <div className="bg-white rounded-xl p-8 shadow-sm">
             <h3 className="text-xl font-semibold text-gray-900 mb-6">コントロールパネル</h3>
 
+            {/* AI設定状態 */}
+            <div className={`mb-4 p-3 rounded-lg ${aiConfigured ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${aiConfigured ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
+                <span className={`text-sm font-medium ${aiConfigured ? 'text-green-700' : 'text-yellow-700'}`}>
+                  {aiConfigured ? 'AI連携: 有効' : 'AI連携: 未設定'}
+                </span>
+              </div>
+              {!aiConfigured && (
+                <p className="text-xs text-yellow-600 mt-1">
+                  .envファイルにVITE_OPENAI_API_KEYを設定してください
+                </p>
+              )}
+            </div>
+
+            {/* AI使用トグル */}
+            {aiConfigured && (
+              <label className="flex items-center justify-between mb-4 p-3 bg-indigo-50 rounded-lg cursor-pointer border border-indigo-200">
+                <div>
+                  <span className="font-medium text-indigo-900">AI生成を使用</span>
+                  <p className="text-xs text-indigo-600">OFFにするとモックデータを使用します</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={useAI}
+                  onChange={(e) => setUseAI(e.target.checked)}
+                  className="w-5 h-5 text-indigo-600 rounded"
+                />
+              </label>
+            )}
+
             {/* 画像トグル */}
             <label className="flex items-center justify-between mb-4 p-3 bg-gray-50 rounded-lg cursor-pointer">
               <div>
@@ -161,15 +232,17 @@ export default function TestTab({ settings }: TestTabProps) {
               className="w-full h-14 bg-gradient-to-r from-[#4F46E5] to-[#7C3AED] text-white rounded-lg font-semibold text-base hover:scale-105 transition-transform duration-200 cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isGenerating ? (
-                <>
-                  <i className="ri-loader-4-line animate-spin mr-2"></i>
-                  生成中...
-                </>
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  {useAI && aiConfigured ? 'AI生成中...' : '生成中...'}
+                </span>
               ) : (
-                <>
-                  <i className="ri-magic-line mr-2"></i>
-                  生成してプレビュー
-                </>
+                <span>
+                  {useAI && aiConfigured ? '🤖 AIで生成' : '生成してプレビュー'}
+                </span>
               )}
             </button>
 
@@ -179,6 +252,27 @@ export default function TestTab({ settings }: TestTabProps) {
             >
               {showPrompt ? 'AIプロンプトを隠す' : 'AIプロンプトを表示'}
             </button>
+
+            {/* トークン使用量 */}
+            {tokenUsage && (
+              <div className="mt-4 p-3 bg-gray-50 rounded-lg text-sm">
+                <p className="font-medium text-gray-700 mb-2">トークン使用量</p>
+                <div className="grid grid-cols-3 gap-2 text-xs text-gray-600">
+                  <div>
+                    <span className="block text-gray-400">プロンプト</span>
+                    <span className="font-mono">{tokenUsage.prompt}</span>
+                  </div>
+                  <div>
+                    <span className="block text-gray-400">生成</span>
+                    <span className="font-mono">{tokenUsage.completion}</span>
+                  </div>
+                  <div>
+                    <span className="block text-gray-400">合計</span>
+                    <span className="font-mono font-medium">{tokenUsage.total}</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <p className="text-xs text-gray-500 mt-4 leading-relaxed">
               ※ このタブは設定変更時の確認用です。通常運用では自動投稿されるため、このタブを使用する必要はありません。
@@ -227,8 +321,8 @@ export default function TestTab({ settings }: TestTabProps) {
           {/* AIプロンプト表示 */}
           {showPrompt && (
             <div className="bg-white rounded-xl p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">AIプロンプト</h3>
-              <pre className="text-xs text-gray-700 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg max-h-96 overflow-auto">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">AIプロンプト（実際にAIに送信される内容）</h3>
+              <pre className="text-xs text-gray-700 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg max-h-96 overflow-auto border border-gray-200">
                 {generatedPrompt}
               </pre>
             </div>
@@ -237,15 +331,38 @@ export default function TestTab({ settings }: TestTabProps) {
 
         {/* メインコンテンツ */}
         <div className="col-span-3 space-y-6">
+          {/* AIエラー表示 */}
+          {aiError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <span className="text-red-500 text-xl">⚠️</span>
+                <div>
+                  <p className="font-medium text-red-800">AI生成エラー</p>
+                  <p className="text-sm text-red-600 mt-1">{aiError}</p>
+                  <p className="text-xs text-red-500 mt-2">モックデータを使用して表示しています</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* プレビュー */}
           <div className="bg-white rounded-xl p-8 shadow-sm">
-            <h3 className="text-xl font-semibold text-gray-900 mb-6">プレビュー</h3>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-semibold text-gray-900">プレビュー</h3>
+              {generatedPost && useAI && aiConfigured && !aiError && (
+                <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">
+                  🤖 AI生成
+                </span>
+              )}
+            </div>
             {generatedPost ? (
               <div className="space-y-6">
                 <div className="border border-gray-200 rounded-2xl p-6 shadow-sm">
                   <div className="flex items-start gap-3 mb-4">
                     <div className="w-12 h-12 bg-gradient-to-br from-[#4F46E5] to-[#7C3AED] rounded-full flex items-center justify-center">
-                      <i className="ri-user-line text-white text-xl"></i>
+                      <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+                      </svg>
                     </div>
                     <div>
                       <div className="font-semibold text-gray-900">X Auto Poster</div>
@@ -258,7 +375,9 @@ export default function TestTab({ settings }: TestTabProps) {
                   {hasImage && (
                     <div className="mb-4 bg-gray-100 rounded-xl aspect-video flex items-center justify-center">
                       <div className="text-center text-gray-400">
-                        <i className="ri-image-line text-4xl"></i>
+                        <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
                         <p className="text-sm mt-2">画像が添付されます</p>
                       </div>
                     </div>
@@ -266,19 +385,27 @@ export default function TestTab({ settings }: TestTabProps) {
 
                   <div className="flex items-center gap-8 text-gray-500 pt-3 border-t border-gray-100">
                     <div className="flex items-center gap-2 cursor-pointer hover:text-blue-500">
-                      <i className="ri-chat-3-line text-xl"></i>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
                       <span className="text-sm">0</span>
                     </div>
                     <div className="flex items-center gap-2 cursor-pointer hover:text-green-500">
-                      <i className="ri-repeat-line text-xl"></i>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
                       <span className="text-sm">0</span>
                     </div>
                     <div className="flex items-center gap-2 cursor-pointer hover:text-red-500">
-                      <i className="ri-heart-line text-xl"></i>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                      </svg>
                       <span className="text-sm">0</span>
                     </div>
                     <div className="flex items-center gap-2 cursor-pointer hover:text-blue-500">
-                      <i className="ri-share-line text-xl"></i>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                      </svg>
                     </div>
                   </div>
                 </div>
@@ -296,24 +423,25 @@ export default function TestTab({ settings }: TestTabProps) {
                 <div className="flex gap-3">
                   <button
                     onClick={handleGenerate}
-                    className="flex-1 h-12 border-2 border-gray-300 text-gray-700 rounded-lg font-medium hover:border-[#4F46E5] hover:text-[#4F46E5] transition-colors cursor-pointer whitespace-nowrap"
+                    disabled={isGenerating}
+                    className="flex-1 h-12 border-2 border-gray-300 text-gray-700 rounded-lg font-medium hover:border-[#4F46E5] hover:text-[#4F46E5] transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50"
                   >
-                    <i className="ri-refresh-line mr-2"></i>
                     再生成
                   </button>
                   <button
                     onClick={handlePostNow}
                     className="flex-1 h-12 bg-[#4F46E5] text-white rounded-lg font-medium hover:bg-[#4338CA] transition-colors cursor-pointer whitespace-nowrap"
                   >
-                    <i className="ri-send-plane-fill mr-2"></i>
                     今すぐ投稿
                   </button>
                 </div>
               </div>
             ) : (
               <div className="border-2 border-dashed border-gray-300 rounded-2xl p-12 text-center">
-                <i className="ri-article-line text-6xl text-gray-300 mb-4"></i>
-                <p className="text-gray-500">「生成してプレビュー」ボタンをクリックして投稿を生成してください</p>
+                <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <p className="text-gray-500">「{useAI && aiConfigured ? '🤖 AIで生成' : '生成してプレビュー'}」ボタンをクリックして投稿を生成してください</p>
               </div>
             )}
           </div>
@@ -359,7 +487,7 @@ export default function TestTab({ settings }: TestTabProps) {
                         {firstLineAnalysis.isEffective ? '効果的' : '改善余地あり'}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-700 mb-2">「{firstLineAnalysis.line.slice(0, 50)}...」</p>
+                    <p className="text-sm text-gray-700 mb-2">「{firstLineAnalysis.line.slice(0, 50)}{firstLineAnalysis.line.length > 50 ? '...' : ''}」</p>
                     {firstLineAnalysis.matchedPatterns.length > 0 && (
                       <div className="flex gap-2 flex-wrap">
                         {firstLineAnalysis.matchedPatterns.map((pattern) => (
