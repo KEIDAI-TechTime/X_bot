@@ -3,6 +3,10 @@
     {
       "path": "/api/auto-post",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/collect-metrics",
+      "schedule": "30 * * * *"
     }
   ]
 }

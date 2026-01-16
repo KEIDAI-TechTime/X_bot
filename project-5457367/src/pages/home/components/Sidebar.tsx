@@ -1,7 +1,7 @@
 
 import { Dispatch, SetStateAction } from 'react';
 
-type TabType = 'settings' | 'schedule' | 'history' | 'test' | 'status';
+type TabType = 'settings' | 'schedule' | 'history' | 'test' | 'status' | 'analytics';
 
 interface SidebarProps {
   activeTab: TabType;
@@ -14,7 +14,8 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
     { id: 'schedule' as TabType, label: 'スケジュール', icon: 'ri-calendar-line' },
     { id: 'history' as TabType, label: '投稿履歴', icon: 'ri-history-line' },
     { id: 'test' as TabType, label: 'テスト投稿', icon: 'ri-flask-line' },
-    { id: 'status' as TabType, label: 'ステータス', icon: 'ri-line-chart-line' },
+    { id: 'status' as TabType, label: 'ステータス', icon: 'ri-dashboard-line' },
+    { id: 'analytics' as TabType, label: '分析', icon: 'ri-bar-chart-box-line' },
   ];
 
   const handleEmergencyStop = () => {
