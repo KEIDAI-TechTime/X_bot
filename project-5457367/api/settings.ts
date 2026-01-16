@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS: ScheduleSettings = {
 };
 
 // Notionから設定を取得
-async function getSettingsFromNotion(notion: Client, databaseId: string): Promise<ScheduleSettings | null> {
+async function getSettingsFromNotion(notion: Client, databaseId: string): Promise<{ settings: ScheduleSettings | null; availableProperties?: string[] }> {
   try {
     const response = await notion.databases.query({
       database_id: databaseId,
@@ -26,11 +26,14 @@ async function getSettingsFromNotion(notion: Client, databaseId: string): Promis
     });
 
     if (response.results.length === 0) {
-      return null;
+      return { settings: null };
     }
 
     const page = response.results[0] as any;
     const properties = page.properties;
+
+    // デバッグ用: 利用可能なプロパティ名を取得
+    const availableProperties = Object.keys(properties);
 
     // postTimes: JSON配列形式またはカンマ区切りテキスト
     let postTimes = DEFAULT_SETTINGS.postTimes;
@@ -71,15 +74,18 @@ async function getSettingsFromNotion(notion: Client, databaseId: string): Promis
     // enabled: チェックボックス
     const enabled = properties.enabled?.checkbox ?? true;
 
-    return { postTimes, activeDays, topics, enabled };
+    return {
+      settings: { postTimes, activeDays, topics, enabled },
+      availableProperties,
+    };
   } catch (error) {
     console.error('Error fetching settings from Notion:', error);
-    return null;
+    return { settings: null };
   }
 }
 
 // Notionに設定を保存
-async function saveSettingsToNotion(notion: Client, databaseId: string, settings: ScheduleSettings): Promise<boolean> {
+async function saveSettingsToNotion(notion: Client, databaseId: string, settings: ScheduleSettings): Promise<{ success: boolean; error?: string }> {
   try {
     // 既存のページを検索
     const response = await notion.databases.query({
@@ -90,58 +96,85 @@ async function saveSettingsToNotion(notion: Client, databaseId: string, settings
     // postTimesはJSON配列形式で保存
     const postTimesJson = JSON.stringify(settings.postTimes);
 
-    // activeDaysはマルチセレクト形式で保存
-    const activeDaysMultiSelect = settings.activeDays.map(day => ({ name: day }));
-
     // topicsはJSON配列形式で保存
     const topicsJson = JSON.stringify(settings.topics);
 
-    const properties: any = {
-      postTimes: {
-        rich_text: [{ text: { content: postTimesJson } }],
-      },
-      activeDays: {
-        multi_select: activeDaysMultiSelect,
-      },
-      enabled: {
-        checkbox: settings.enabled,
-      },
-    };
+    // activeDaysはカンマ区切りテキストで保存（multi_selectが存在しない場合に対応）
+    const activeDaysText = settings.activeDays.join(',');
 
-    // topicsプロパティがある場合のみ更新
     if (response.results.length > 0) {
       const existingPage = response.results[0] as any;
-      if (existingPage.properties.topics) {
+      const existingProps = existingPage.properties;
+
+      // 存在するプロパティのみ更新
+      const properties: any = {};
+
+      // enabled
+      if (existingProps.enabled) {
+        properties.enabled = { checkbox: settings.enabled };
+      }
+
+      // postTimes
+      if (existingProps.postTimes) {
+        properties.postTimes = {
+          rich_text: [{ text: { content: postTimesJson } }],
+        };
+      }
+
+      // activeDays: multi_selectまたはrich_text
+      if (existingProps.activeDays?.type === 'multi_select') {
+        properties.activeDays = {
+          multi_select: settings.activeDays.map(day => ({ name: day })),
+        };
+      } else if (existingProps.activeDays?.type === 'rich_text') {
+        properties.activeDays = {
+          rich_text: [{ text: { content: activeDaysText } }],
+        };
+      }
+
+      // topic または topics
+      if (existingProps.topics) {
         properties.topics = {
           rich_text: [{ text: { content: topicsJson } }],
         };
+      } else if (existingProps.topic) {
+        properties.topic = {
+          rich_text: [{ text: { content: topicsJson } }],
+        };
       }
-    }
 
-    if (response.results.length > 0) {
-      // 既存のページを更新
+      console.log('Updating Notion page with properties:', Object.keys(properties));
+
       await notion.pages.update({
-        page_id: response.results[0].id,
+        page_id: existingPage.id,
         properties,
       });
     } else {
       // 新規ページを作成
+      console.log('Creating new Notion page');
       await notion.pages.create({
         parent: { database_id: databaseId },
         properties: {
           name: { title: [{ text: { content: 'Schedule Settings' } }] },
-          ...properties,
-          topics: {
+          enabled: { checkbox: settings.enabled },
+          postTimes: {
+            rich_text: [{ text: { content: postTimesJson } }],
+          },
+          activeDays: {
+            rich_text: [{ text: { content: activeDaysText } }],
+          },
+          topic: {
             rich_text: [{ text: { content: topicsJson } }],
           },
         },
       });
     }
 
-    return true;
+    return { success: true };
   } catch (error) {
-    console.error('Error saving settings to Notion:', error);
-    return false;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Error saving settings to Notion:', errorMessage, error);
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -167,10 +200,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // GET: 設定を取得
   if (req.method === 'GET') {
-    const settings = await getSettingsFromNotion(notion, settingsDatabaseId);
+    const result = await getSettingsFromNotion(notion, settingsDatabaseId);
     return res.status(200).json({
       success: true,
-      settings: settings || DEFAULT_SETTINGS,
+      settings: result.settings || DEFAULT_SETTINGS,
+      availableProperties: result.availableProperties || [],
     });
   }
 
@@ -185,12 +219,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       enabled: enabled ?? true,
     };
 
-    const success = await saveSettingsToNotion(notion, settingsDatabaseId, settings);
+    const result = await saveSettingsToNotion(notion, settingsDatabaseId, settings);
 
-    if (success) {
+    if (result.success) {
       return res.status(200).json({ success: true, settings });
     } else {
-      return res.status(500).json({ error: 'Failed to save settings' });
+      return res.status(500).json({ error: 'Failed to save settings', details: result.error });
     }
   }
 
