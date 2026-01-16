@@ -1,15 +1,26 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { TwitterApi } from 'twitter-api-v2';
 import Anthropic from '@anthropic-ai/sdk';
+import { Client } from '@notionhq/client';
+
+// スケジュール設定の型
+interface ScheduleSettings {
+  postTimes: string[];
+  activeDays: string[];
+  topics: string[];
+  enabled: boolean;
+}
 
 // デフォルト設定
-const DEFAULT_SETTINGS = {
-  topics: [
-    'AI・機械学習の最新動向',
-    'リモートワーク・生産性向上',
-    'クラウドサービス・SaaS',
-    'プログラミング・開発ツール',
-  ],
+const DEFAULT_SETTINGS: ScheduleSettings = {
+  postTimes: ['07:00', '12:00', '19:00'],
+  activeDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+  topics: ['AI・機械学習の最新動向', 'クラウドサービス・SaaS', 'プログラミング・開発ツール'],
+  enabled: true,
+};
+
+// 投稿設定
+const POST_CONFIG = {
   persona: 'テクノロジーとビジネスに詳しい、フレンドリーな専門家',
   tone: 'カジュアル',
   contentDirection: '最新のAIトレンドやビジネスに役立つ情報を、初心者にも分かりやすく解説',
@@ -21,16 +32,52 @@ const DAY_MAP: Record<number, string> = {
   0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat'
 };
 
-// 現在時刻がスケジュールに含まれるかチェック
-function isScheduledTime(): { scheduled: boolean; reason: string } {
-  // 環境変数からスケジュールを取得
-  // POST_SCHEDULE: "07:00,12:00,18:00,21:00" 形式
-  // POST_ACTIVE_DAYS: "mon,tue,wed,thu,fri,sat,sun" 形式
-  const scheduleStr = process.env.POST_SCHEDULE || '07:00,12:00,19:00';
-  const activeDaysStr = process.env.POST_ACTIVE_DAYS || 'mon,tue,wed,thu,fri,sat,sun';
+// Notionから設定を取得
+async function getSettingsFromNotion(): Promise<ScheduleSettings> {
+  const notionApiKey = process.env.NOTION_API_KEY;
+  const settingsDatabaseId = process.env.NOTION_SETTINGS_DATABASE_ID;
 
-  const scheduledTimes = scheduleStr.split(',').map(t => t.trim());
-  const activeDays = activeDaysStr.split(',').map(d => d.trim().toLowerCase());
+  if (!notionApiKey || !settingsDatabaseId) {
+    console.log('Notion not configured, using default settings');
+    return DEFAULT_SETTINGS;
+  }
+
+  try {
+    const notion = new Client({ auth: notionApiKey });
+    const response = await notion.databases.query({
+      database_id: settingsDatabaseId,
+      page_size: 1,
+      sorts: [{ property: 'updatedAt', direction: 'descending' }],
+    });
+
+    if (response.results.length === 0) {
+      console.log('No settings found in Notion, using defaults');
+      return DEFAULT_SETTINGS;
+    }
+
+    const page = response.results[0] as any;
+    const properties = page.properties;
+
+    const settings: ScheduleSettings = {
+      postTimes: properties.postTimes?.rich_text?.[0]?.plain_text?.split(',').map((t: string) => t.trim()) || DEFAULT_SETTINGS.postTimes,
+      activeDays: properties.activeDays?.rich_text?.[0]?.plain_text?.split(',').map((d: string) => d.trim().toLowerCase()) || DEFAULT_SETTINGS.activeDays,
+      topics: properties.topics?.rich_text?.[0]?.plain_text?.split(',').map((t: string) => t.trim()) || DEFAULT_SETTINGS.topics,
+      enabled: properties.enabled?.checkbox ?? true,
+    };
+
+    console.log('Settings loaded from Notion:', settings);
+    return settings;
+  } catch (error) {
+    console.error('Error fetching settings from Notion:', error);
+    return DEFAULT_SETTINGS;
+  }
+}
+
+// 現在時刻がスケジュールに含まれるかチェック
+function isScheduledTime(settings: ScheduleSettings): { scheduled: boolean; reason: string } {
+  if (!settings.enabled) {
+    return { scheduled: false, reason: 'Auto-posting is disabled' };
+  }
 
   // 日本時間で現在時刻を取得
   const now = new Date();
@@ -43,17 +90,16 @@ function isScheduledTime(): { scheduled: boolean; reason: string } {
   const currentDay = DAY_MAP[jstTime.getDay()];
 
   console.log(`Current JST: ${currentTime}, Day: ${currentDay}`);
-  console.log(`Scheduled times: ${scheduledTimes.join(', ')}`);
-  console.log(`Active days: ${activeDays.join(', ')}`);
+  console.log(`Scheduled times: ${settings.postTimes.join(', ')}`);
+  console.log(`Active days: ${settings.activeDays.join(', ')}`);
 
   // 曜日チェック
-  if (!activeDays.includes(currentDay)) {
+  if (!settings.activeDays.includes(currentDay)) {
     return { scheduled: false, reason: `Today (${currentDay}) is not an active day` };
   }
 
-  // 時刻チェック（分は00のみ許可、時間が一致すればOK）
-  const currentHourTime = `${currentHour}:00`;
-  const isTimeMatch = scheduledTimes.some(time => {
+  // 時刻チェック（時間が一致すればOK）
+  const isTimeMatch = settings.postTimes.some(time => {
     const [schedHour] = time.split(':');
     return schedHour === currentHour;
   });
@@ -71,14 +117,14 @@ function selectRandomTopic(topics: string[]): string {
 }
 
 // AIプロンプトを生成
-function buildPrompt(topic: string, settings: typeof DEFAULT_SETTINGS): string {
+function buildPrompt(topic: string): string {
   return `あなたはX（旧Twitter）の投稿を作成するアシスタントです。
 
-【ペルソナ】${settings.persona}
-【トーン】${settings.tone}
+【ペルソナ】${POST_CONFIG.persona}
+【トーン】${POST_CONFIG.tone}
 【トピック】${topic}
-【方向性】${settings.contentDirection}
-【文字数】${settings.maxLength}文字以内
+【方向性】${POST_CONFIG.contentDirection}
+【文字数】${POST_CONFIG.maxLength}文字以内
 
 以下のポイントを意識して投稿を作成してください:
 - 1行目で読者の興味を引く（質問、驚き、共感など）
@@ -102,15 +148,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 強制実行パラメータ（テスト用）
   const forcePost = req.query.force === 'true';
 
+  // Notionから設定を取得
+  const settings = await getSettingsFromNotion();
+
   // スケジュールチェック
   if (!forcePost) {
-    const scheduleCheck = isScheduledTime();
+    const scheduleCheck = isScheduledTime(settings);
     if (!scheduleCheck.scheduled) {
       console.log('Skipping post:', scheduleCheck.reason);
       return res.status(200).json({
         success: false,
         skipped: true,
         reason: scheduleCheck.reason,
+        currentSettings: settings,
         timestamp: new Date().toISOString(),
       });
     }
@@ -133,12 +183,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // トピック選択
-    const topic = selectRandomTopic(DEFAULT_SETTINGS.topics);
+    const topic = selectRandomTopic(settings.topics);
     console.log('Selected topic:', topic);
 
     // AIで投稿内容を生成
     const anthropic = new Anthropic({ apiKey: anthropicKey });
-    const prompt = buildPrompt(topic, DEFAULT_SETTINGS);
+    const prompt = buildPrompt(topic);
 
     const aiResponse = await anthropic.messages.create({
       model: 'claude-opus-4-5-20251101',
