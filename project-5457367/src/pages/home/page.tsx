@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import SettingsTab from './components/SettingsTab';
@@ -8,6 +8,7 @@ import HistoryTab from './components/HistoryTab';
 import TestTab from './components/TestTab';
 import StatusTab from './components/StatusTab';
 import { mockPostSettings, mockStatus, type Settings } from '../../mocks/postSettings';
+import { saveSettingsToNotion } from '../../services/settingsService';
 
 type TabType = 'settings' | 'schedule' | 'history' | 'test' | 'status';
 
@@ -99,6 +100,34 @@ export default function HomePage() {
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
+
+  // 初回レンダリングかどうかを追跡
+  const isFirstRender = useRef(true);
+
+  // スケジュール関連の設定が変更されたらNotionに同期
+  useEffect(() => {
+    // 初回レンダリング時はスキップ
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    // デバウンス: 連続した変更をまとめる
+    const timeoutId = setTimeout(() => {
+      saveSettingsToNotion({
+        postTimes: settings.postTimes,
+        activeDays: settings.activeDays,
+        topics: settings.topics,
+        enabled: settings.enabled,
+      }).then(success => {
+        if (success) {
+          console.log('Settings synced to Notion');
+        }
+      });
+    }, 1000); // 1秒後に保存
+
+    return () => clearTimeout(timeoutId);
+  }, [settings.postTimes, settings.activeDays, settings.topics, settings.enabled]);
 
   const handleToggleEnabled = () => {
     setSettings(prev => ({ ...prev, enabled: !prev.enabled }));
