@@ -47,7 +47,6 @@ async function getSettingsFromNotion(): Promise<ScheduleSettings> {
     const response = await notion.databases.query({
       database_id: settingsDatabaseId,
       page_size: 1,
-      sorts: [{ property: 'updatedAt', direction: 'descending' }],
     });
 
     if (response.results.length === 0) {
@@ -58,11 +57,52 @@ async function getSettingsFromNotion(): Promise<ScheduleSettings> {
     const page = response.results[0] as any;
     const properties = page.properties;
 
+    // postTimes: JSON配列形式またはカンマ区切りテキスト
+    let postTimes = DEFAULT_SETTINGS.postTimes;
+    const postTimesText = properties.postTimes?.rich_text?.[0]?.plain_text;
+    if (postTimesText) {
+      try {
+        // JSON配列として解析を試みる
+        const parsed = JSON.parse(postTimesText);
+        if (Array.isArray(parsed)) {
+          postTimes = parsed;
+        }
+      } catch {
+        // カンマ区切りとして解析
+        postTimes = postTimesText.split(',').map((t: string) => t.trim());
+      }
+    }
+
+    // activeDays: マルチセレクトまたはテキスト
+    let activeDays = DEFAULT_SETTINGS.activeDays;
+    if (properties.activeDays?.multi_select) {
+      activeDays = properties.activeDays.multi_select.map((item: any) => item.name.toLowerCase());
+    } else if (properties.activeDays?.rich_text?.[0]?.plain_text) {
+      activeDays = properties.activeDays.rich_text[0].plain_text.split(',').map((d: string) => d.trim().toLowerCase());
+    }
+
+    // topics: JSON配列、カンマ区切り、または単一テキスト
+    let topics = DEFAULT_SETTINGS.topics;
+    const topicsText = properties.topics?.rich_text?.[0]?.plain_text || properties.topic?.rich_text?.[0]?.plain_text;
+    if (topicsText) {
+      try {
+        const parsed = JSON.parse(topicsText);
+        if (Array.isArray(parsed)) {
+          topics = parsed;
+        }
+      } catch {
+        topics = topicsText.split(',').map((t: string) => t.trim());
+      }
+    }
+
+    // enabled: チェックボックス
+    const enabled = properties.enabled?.checkbox ?? true;
+
     const settings: ScheduleSettings = {
-      postTimes: properties.postTimes?.rich_text?.[0]?.plain_text?.split(',').map((t: string) => t.trim()) || DEFAULT_SETTINGS.postTimes,
-      activeDays: properties.activeDays?.rich_text?.[0]?.plain_text?.split(',').map((d: string) => d.trim().toLowerCase()) || DEFAULT_SETTINGS.activeDays,
-      topics: properties.topics?.rich_text?.[0]?.plain_text?.split(',').map((t: string) => t.trim()) || DEFAULT_SETTINGS.topics,
-      enabled: properties.enabled?.checkbox ?? true,
+      postTimes,
+      activeDays,
+      topics,
+      enabled,
     };
 
     console.log('Settings loaded from Notion:', settings);

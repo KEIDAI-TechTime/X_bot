@@ -23,7 +23,6 @@ async function getSettingsFromNotion(notion: Client, databaseId: string): Promis
     const response = await notion.databases.query({
       database_id: databaseId,
       page_size: 1,
-      sorts: [{ property: 'updatedAt', direction: 'descending' }],
     });
 
     if (response.results.length === 0) {
@@ -33,12 +32,46 @@ async function getSettingsFromNotion(notion: Client, databaseId: string): Promis
     const page = response.results[0] as any;
     const properties = page.properties;
 
-    return {
-      postTimes: properties.postTimes?.rich_text?.[0]?.plain_text?.split(',').map((t: string) => t.trim()) || DEFAULT_SETTINGS.postTimes,
-      activeDays: properties.activeDays?.rich_text?.[0]?.plain_text?.split(',').map((d: string) => d.trim()) || DEFAULT_SETTINGS.activeDays,
-      topics: properties.topics?.rich_text?.[0]?.plain_text?.split(',').map((t: string) => t.trim()) || DEFAULT_SETTINGS.topics,
-      enabled: properties.enabled?.checkbox ?? true,
-    };
+    // postTimes: JSON配列形式またはカンマ区切りテキスト
+    let postTimes = DEFAULT_SETTINGS.postTimes;
+    const postTimesText = properties.postTimes?.rich_text?.[0]?.plain_text;
+    if (postTimesText) {
+      try {
+        const parsed = JSON.parse(postTimesText);
+        if (Array.isArray(parsed)) {
+          postTimes = parsed;
+        }
+      } catch {
+        postTimes = postTimesText.split(',').map((t: string) => t.trim());
+      }
+    }
+
+    // activeDays: マルチセレクトまたはテキスト
+    let activeDays = DEFAULT_SETTINGS.activeDays;
+    if (properties.activeDays?.multi_select) {
+      activeDays = properties.activeDays.multi_select.map((item: any) => item.name.toLowerCase());
+    } else if (properties.activeDays?.rich_text?.[0]?.plain_text) {
+      activeDays = properties.activeDays.rich_text[0].plain_text.split(',').map((d: string) => d.trim().toLowerCase());
+    }
+
+    // topics: JSON配列、カンマ区切り、または単一テキスト
+    let topics = DEFAULT_SETTINGS.topics;
+    const topicsText = properties.topics?.rich_text?.[0]?.plain_text || properties.topic?.rich_text?.[0]?.plain_text;
+    if (topicsText) {
+      try {
+        const parsed = JSON.parse(topicsText);
+        if (Array.isArray(parsed)) {
+          topics = parsed;
+        }
+      } catch {
+        topics = topicsText.split(',').map((t: string) => t.trim());
+      }
+    }
+
+    // enabled: チェックボックス
+    const enabled = properties.enabled?.checkbox ?? true;
+
+    return { postTimes, activeDays, topics, enabled };
   } catch (error) {
     console.error('Error fetching settings from Notion:', error);
     return null;
@@ -54,23 +87,36 @@ async function saveSettingsToNotion(notion: Client, databaseId: string, settings
       page_size: 1,
     });
 
-    const properties = {
+    // postTimesはJSON配列形式で保存
+    const postTimesJson = JSON.stringify(settings.postTimes);
+
+    // activeDaysはマルチセレクト形式で保存
+    const activeDaysMultiSelect = settings.activeDays.map(day => ({ name: day }));
+
+    // topicsはJSON配列形式で保存
+    const topicsJson = JSON.stringify(settings.topics);
+
+    const properties: any = {
       postTimes: {
-        rich_text: [{ text: { content: settings.postTimes.join(',') } }],
+        rich_text: [{ text: { content: postTimesJson } }],
       },
       activeDays: {
-        rich_text: [{ text: { content: settings.activeDays.join(',') } }],
-      },
-      topics: {
-        rich_text: [{ text: { content: settings.topics.join(',') } }],
+        multi_select: activeDaysMultiSelect,
       },
       enabled: {
         checkbox: settings.enabled,
       },
-      updatedAt: {
-        date: { start: new Date().toISOString() },
-      },
     };
+
+    // topicsプロパティがある場合のみ更新
+    if (response.results.length > 0) {
+      const existingPage = response.results[0] as any;
+      if (existingPage.properties.topics) {
+        properties.topics = {
+          rich_text: [{ text: { content: topicsJson } }],
+        };
+      }
+    }
 
     if (response.results.length > 0) {
       // 既存のページを更新
@@ -83,8 +129,11 @@ async function saveSettingsToNotion(notion: Client, databaseId: string, settings
       await notion.pages.create({
         parent: { database_id: databaseId },
         properties: {
-          Name: { title: [{ text: { content: 'Schedule Settings' } }] },
+          name: { title: [{ text: { content: 'Schedule Settings' } }] },
           ...properties,
+          topics: {
+            rich_text: [{ text: { content: topicsJson } }],
+          },
         },
       });
     }
