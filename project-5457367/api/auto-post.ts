@@ -16,6 +16,55 @@ const DEFAULT_SETTINGS = {
   maxLength: 280,
 };
 
+// 曜日マッピング
+const DAY_MAP: Record<number, string> = {
+  0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat'
+};
+
+// 現在時刻がスケジュールに含まれるかチェック
+function isScheduledTime(): { scheduled: boolean; reason: string } {
+  // 環境変数からスケジュールを取得
+  // POST_SCHEDULE: "07:00,12:00,18:00,21:00" 形式
+  // POST_ACTIVE_DAYS: "mon,tue,wed,thu,fri,sat,sun" 形式
+  const scheduleStr = process.env.POST_SCHEDULE || '07:00,12:00,19:00';
+  const activeDaysStr = process.env.POST_ACTIVE_DAYS || 'mon,tue,wed,thu,fri,sat,sun';
+
+  const scheduledTimes = scheduleStr.split(',').map(t => t.trim());
+  const activeDays = activeDaysStr.split(',').map(d => d.trim().toLowerCase());
+
+  // 日本時間で現在時刻を取得
+  const now = new Date();
+  const jstOffset = 9 * 60; // JST is UTC+9
+  const jstTime = new Date(now.getTime() + (jstOffset + now.getTimezoneOffset()) * 60000);
+
+  const currentHour = jstTime.getHours().toString().padStart(2, '0');
+  const currentMinute = jstTime.getMinutes().toString().padStart(2, '0');
+  const currentTime = `${currentHour}:${currentMinute}`;
+  const currentDay = DAY_MAP[jstTime.getDay()];
+
+  console.log(`Current JST: ${currentTime}, Day: ${currentDay}`);
+  console.log(`Scheduled times: ${scheduledTimes.join(', ')}`);
+  console.log(`Active days: ${activeDays.join(', ')}`);
+
+  // 曜日チェック
+  if (!activeDays.includes(currentDay)) {
+    return { scheduled: false, reason: `Today (${currentDay}) is not an active day` };
+  }
+
+  // 時刻チェック（分は00のみ許可、時間が一致すればOK）
+  const currentHourTime = `${currentHour}:00`;
+  const isTimeMatch = scheduledTimes.some(time => {
+    const [schedHour] = time.split(':');
+    return schedHour === currentHour;
+  });
+
+  if (!isTimeMatch) {
+    return { scheduled: false, reason: `Current time (${currentTime}) is not in schedule` };
+  }
+
+  return { scheduled: true, reason: 'Time matches schedule' };
+}
+
 // ランダムにトピックを選択
 function selectRandomTopic(topics: string[]): string {
   return topics[Math.floor(Math.random() * topics.length)];
@@ -49,6 +98,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   console.log('Auto-post triggered at:', new Date().toISOString());
+
+  // 強制実行パラメータ（テスト用）
+  const forcePost = req.query.force === 'true';
+
+  // スケジュールチェック
+  if (!forcePost) {
+    const scheduleCheck = isScheduledTime();
+    if (!scheduleCheck.scheduled) {
+      console.log('Skipping post:', scheduleCheck.reason);
+      return res.status(200).json({
+        success: false,
+        skipped: true,
+        reason: scheduleCheck.reason,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
 
   try {
     // 環境変数チェック
