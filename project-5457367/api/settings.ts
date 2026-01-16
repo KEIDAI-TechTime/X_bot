@@ -21,6 +21,24 @@ interface PostSettings {
   structureTemplate?: string;
   referenceInfo?: string;
   examplePosts?: string;
+  // X投稿戦略設定
+  contentCategory?: string;
+  contentFormat?: string;
+  firstLinePattern?: string;
+  provenPatterns?: string[];
+  writingRules?: {
+    readabilityLevel?: string;
+    hiraganaRatio?: number;
+    kanjiRatio?: number;
+    useHalfWidthNumbers?: boolean;
+    maxConsecutiveSameEnding?: number;
+    omitConjunctions?: boolean;
+    useListFormat?: boolean;
+  };
+  // アルゴリズム対策
+  avoidUrls?: boolean;
+  preferImages?: boolean;
+  targetDwellTime?: number;
 }
 
 // デフォルト設定
@@ -124,6 +142,31 @@ async function getSettingsFromNotion(notion: Client, databaseId: string): Promis
     // enabled: チェックボックス
     const enabled = properties.enabled?.checkbox ?? true;
 
+    // provenPatterns: JSON配列形式またはカンマ区切りテキスト
+    let provenPatterns: string[] | undefined;
+    const provenPatternsText = getTextProperty(properties, 'provenPatterns');
+    if (provenPatternsText) {
+      try {
+        const parsed = JSON.parse(provenPatternsText);
+        if (Array.isArray(parsed)) {
+          provenPatterns = parsed;
+        }
+      } catch {
+        provenPatterns = provenPatternsText.split(',').map((t: string) => t.trim());
+      }
+    }
+
+    // writingRules: JSON形式
+    let writingRules: PostSettings['writingRules'] | undefined;
+    const writingRulesText = getTextProperty(properties, 'writingRules');
+    if (writingRulesText) {
+      try {
+        writingRules = JSON.parse(writingRulesText);
+      } catch {
+        console.warn('Failed to parse writingRules JSON');
+      }
+    }
+
     // 投稿生成関連の設定
     const settings: PostSettings = {
       postTimes,
@@ -142,6 +185,16 @@ async function getSettingsFromNotion(notion: Client, databaseId: string): Promis
       structureTemplate: getTextProperty(properties, 'structureTemplate'),
       referenceInfo: getTextProperty(properties, 'referenceInfo'),
       examplePosts: getTextProperty(properties, 'examplePosts'),
+      // X投稿戦略設定
+      contentCategory: getTextProperty(properties, 'contentCategory'),
+      contentFormat: getTextProperty(properties, 'contentFormat'),
+      firstLinePattern: getTextProperty(properties, 'firstLinePattern'),
+      provenPatterns,
+      writingRules,
+      // アルゴリズム対策
+      avoidUrls: getCheckboxProperty(properties, 'avoidUrls'),
+      preferImages: getCheckboxProperty(properties, 'preferImages'),
+      targetDwellTime: getNumberProperty(properties, 'targetDwellTime'),
     };
 
     return {
@@ -261,6 +314,26 @@ async function saveSettingsToNotion(notion: Client, databaseId: string, settings
       setTextProperty(properties, existingProps, 'referenceInfo', settings.referenceInfo);
       setTextProperty(properties, existingProps, 'examplePosts', settings.examplePosts);
 
+      // X投稿戦略設定
+      setTextProperty(properties, existingProps, 'contentCategory', settings.contentCategory);
+      setTextProperty(properties, existingProps, 'contentFormat', settings.contentFormat);
+      setTextProperty(properties, existingProps, 'firstLinePattern', settings.firstLinePattern);
+      if (settings.provenPatterns !== undefined && existingProps.provenPatterns?.type === 'rich_text') {
+        properties.provenPatterns = {
+          rich_text: [{ text: { content: JSON.stringify(settings.provenPatterns) } }],
+        };
+      }
+      if (settings.writingRules !== undefined && existingProps.writingRules?.type === 'rich_text') {
+        properties.writingRules = {
+          rich_text: [{ text: { content: JSON.stringify(settings.writingRules) } }],
+        };
+      }
+
+      // アルゴリズム対策
+      setCheckboxProperty(properties, existingProps, 'avoidUrls', settings.avoidUrls);
+      setCheckboxProperty(properties, existingProps, 'preferImages', settings.preferImages);
+      setNumberProperty(properties, existingProps, 'targetDwellTime', settings.targetDwellTime);
+
       console.log('Updating Notion page with properties:', Object.keys(properties));
 
       await notion.pages.update({
@@ -346,6 +419,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       structureTemplate,
       referenceInfo,
       examplePosts,
+      // X投稿戦略設定
+      contentCategory,
+      contentFormat,
+      firstLinePattern,
+      provenPatterns,
+      writingRules,
+      // アルゴリズム対策
+      avoidUrls,
+      preferImages,
+      targetDwellTime,
     } = req.body;
 
     const settings: PostSettings = {
@@ -365,6 +448,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       structureTemplate,
       referenceInfo,
       examplePosts,
+      // X投稿戦略設定
+      contentCategory,
+      contentFormat,
+      firstLinePattern,
+      provenPatterns,
+      writingRules,
+      // アルゴリズム対策
+      avoidUrls,
+      preferImages,
+      targetDwellTime,
     };
 
     const result = await saveSettingsToNotion(notion, settingsDatabaseId, settings);

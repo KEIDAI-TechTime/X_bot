@@ -133,6 +133,16 @@ export default function HomePage() {
         structureTemplate: settings.structureTemplate,
         referenceInfo: settings.referenceInfo,
         examplePosts: settings.examplePosts,
+        // X投稿戦略設定
+        contentCategory: settings.contentCategory,
+        contentFormat: settings.contentFormat,
+        firstLinePattern: settings.firstLinePattern,
+        provenPatterns: settings.provenPatterns,
+        writingRules: settings.writingRules,
+        // アルゴリズム対策
+        avoidUrls: settings.avoidUrls,
+        preferImages: settings.preferImages,
+        targetDwellTime: settings.targetDwellTime,
       }).then(success => {
         if (success) {
           console.log('Settings synced to Notion');
@@ -158,6 +168,16 @@ export default function HomePage() {
     settings.structureTemplate,
     settings.referenceInfo,
     settings.examplePosts,
+    // X投稿戦略設定
+    settings.contentCategory,
+    settings.contentFormat,
+    settings.firstLinePattern,
+    settings.provenPatterns,
+    settings.writingRules,
+    // アルゴリズム対策
+    settings.avoidUrls,
+    settings.preferImages,
+    settings.targetDwellTime,
   ]);
 
   const handleToggleEnabled = () => {

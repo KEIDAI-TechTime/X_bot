@@ -3,6 +3,17 @@ import { TwitterApi } from 'twitter-api-v2';
 import Anthropic from '@anthropic-ai/sdk';
 import { Client } from '@notionhq/client';
 
+// ライティングルール型
+interface WritingRules {
+  readabilityLevel?: string;
+  hiraganaRatio?: number;
+  kanjiRatio?: number;
+  useHalfWidthNumbers?: boolean;
+  maxConsecutiveSameEnding?: number;
+  omitConjunctions?: boolean;
+  useListFormat?: boolean;
+}
+
 // 設定の型（スケジュール + 投稿生成）
 interface PostSettings {
   // スケジュール関連
@@ -23,6 +34,16 @@ interface PostSettings {
   structureTemplate: string;
   referenceInfo: string;
   examplePosts: string;
+  // X投稿戦略設定
+  contentCategory: string;
+  contentFormat: string;
+  firstLinePattern: string;
+  provenPatterns: string[];
+  writingRules: WritingRules;
+  // アルゴリズム対策
+  avoidUrls: boolean;
+  preferImages: boolean;
+  targetDwellTime: number;
 }
 
 // デフォルト設定
@@ -43,6 +64,24 @@ const DEFAULT_SETTINGS: PostSettings = {
   structureTemplate: '',
   referenceInfo: '',
   examplePosts: '',
+  // X投稿戦略設定
+  contentCategory: 'empathy',
+  contentFormat: 'points_3',
+  firstLinePattern: 'method',
+  provenPatterns: ['breathing_habit', 'thought_process'],
+  writingRules: {
+    readabilityLevel: 'middle_school',
+    hiraganaRatio: 70,
+    kanjiRatio: 30,
+    useHalfWidthNumbers: true,
+    maxConsecutiveSameEnding: 2,
+    omitConjunctions: true,
+    useListFormat: true,
+  },
+  // アルゴリズム対策
+  avoidUrls: true,
+  preferImages: true,
+  targetDwellTime: 120,
 };
 
 // 曜日マッピング
@@ -126,6 +165,31 @@ async function getSettingsFromNotion(): Promise<PostSettings> {
       }
     }
 
+    // provenPatterns: JSON配列形式またはカンマ区切りテキスト
+    let provenPatterns = DEFAULT_SETTINGS.provenPatterns;
+    const provenPatternsText = getTextProperty(properties, 'provenPatterns', '');
+    if (provenPatternsText) {
+      try {
+        const parsed = JSON.parse(provenPatternsText);
+        if (Array.isArray(parsed)) {
+          provenPatterns = parsed;
+        }
+      } catch {
+        provenPatterns = provenPatternsText.split(',').map((t: string) => t.trim());
+      }
+    }
+
+    // writingRules: JSON形式
+    let writingRules = DEFAULT_SETTINGS.writingRules;
+    const writingRulesText = getTextProperty(properties, 'writingRules', '');
+    if (writingRulesText) {
+      try {
+        writingRules = { ...DEFAULT_SETTINGS.writingRules, ...JSON.parse(writingRulesText) };
+      } catch {
+        console.warn('Failed to parse writingRules JSON');
+      }
+    }
+
     // 投稿生成関連の設定を取得
     const settings: PostSettings = {
       // スケジュール関連
@@ -146,6 +210,16 @@ async function getSettingsFromNotion(): Promise<PostSettings> {
       structureTemplate: getTextProperty(properties, 'structureTemplate', DEFAULT_SETTINGS.structureTemplate),
       referenceInfo: getTextProperty(properties, 'referenceInfo', DEFAULT_SETTINGS.referenceInfo),
       examplePosts: getTextProperty(properties, 'examplePosts', DEFAULT_SETTINGS.examplePosts),
+      // X投稿戦略設定
+      contentCategory: getTextProperty(properties, 'contentCategory', DEFAULT_SETTINGS.contentCategory),
+      contentFormat: getTextProperty(properties, 'contentFormat', DEFAULT_SETTINGS.contentFormat),
+      firstLinePattern: getTextProperty(properties, 'firstLinePattern', DEFAULT_SETTINGS.firstLinePattern),
+      provenPatterns,
+      writingRules,
+      // アルゴリズム対策
+      avoidUrls: getCheckboxProperty(properties, 'avoidUrls', DEFAULT_SETTINGS.avoidUrls),
+      preferImages: getCheckboxProperty(properties, 'preferImages', DEFAULT_SETTINGS.preferImages),
+      targetDwellTime: getNumberProperty(properties, 'targetDwellTime', DEFAULT_SETTINGS.targetDwellTime),
     };
 
     console.log('Settings loaded from Notion:', settings);
@@ -199,8 +273,55 @@ function selectRandomTopic(topics: string[]): string {
   return topics[Math.floor(Math.random() * topics.length)];
 }
 
+// コンテンツカテゴリの説明
+const CONTENT_CATEGORY_LABELS: Record<string, string> = {
+  empathy: '共感できる（あるあるネタ）',
+  informative: 'ためになる（知識として役立つ）',
+  humorous: '笑える（ユーモラス）',
+  positive: 'とにかく明るくやる',
+};
+
+// コンテンツフォーマットの説明
+const CONTENT_FORMAT_LABELS: Record<string, string> = {
+  points_3: 'ポイント3つ解説型',
+  list_7_8: '7か条・8か条型',
+  book_review: '本の画像＋感想一言',
+  handwritten: '手書き風',
+  memo_text: 'メモ帳テキスト風',
+  long_post: '長文ポスト',
+};
+
+// 1行目パターンの説明
+const FIRST_LINE_PATTERN_LABELS: Record<string, string> = {
+  method: '方法提示（〜する方法）',
+  question_what: '質問形式（〇〇とは？）',
+  question_why: '質問形式（なぜ〜？）',
+  secret: '秘密公開（実は〜）',
+  target: 'ターゲット指定（〜な人へ）',
+};
+
+// 実績のあるパターンの説明
+const PROVEN_PATTERN_LABELS: Record<string, string> = {
+  thought_process: '〜な人の思考回路を言語化',
+  brain_inside: '〜な人の脳内はこんな感じ',
+  solution: '〜を何とかしてくれる方法/本',
+  breathing_habit: '〜な人が息を吸うようにやっている行動',
+  authority: '権威のある人が言っていたよ構文',
+  staircase: '階段型構文',
+  foolish: '馬鹿だった構文',
+};
+
+// 読みやすさレベルの説明
+const READABILITY_LABELS: Record<string, string> = {
+  middle_school: '中学生でも理解できる',
+  high_school: '高校生レベル',
+  college: '大学生レベル',
+};
+
 // AIプロンプトを生成
 function buildPrompt(topic: string, settings: PostSettings): string {
+  const wr = settings.writingRules;
+
   let prompt = `あなたはX（旧Twitter）の投稿を作成するアシスタントです。
 
 【ペルソナ】${settings.persona}
@@ -209,13 +330,50 @@ function buildPrompt(topic: string, settings: PostSettings): string {
 【方向性】${settings.contentDirection}
 【文字数】${settings.maxLength}文字以内
 
-以下のポイントを意識して投稿を作成してください:
-- 1行目で読者の興味を引く（質問、驚き、共感など）
-- 中学生でも理解できる言葉遣い
-- 漢字を使いすぎない（ひらがな70%:漢字30%程度）
-- 同じ語尾を続けない（「です」「です」など）
-- URLリンクは含めない
-- ネガティブな内容は避ける`;
+【コンテンツタイプ】${CONTENT_CATEGORY_LABELS[settings.contentCategory] || settings.contentCategory}
+【投稿の型】${CONTENT_FORMAT_LABELS[settings.contentFormat] || settings.contentFormat}
+【1行目パターン】${FIRST_LINE_PATTERN_LABELS[settings.firstLinePattern] || settings.firstLinePattern}`;
+
+  // 実績のあるパターン
+  if (settings.provenPatterns && settings.provenPatterns.length > 0) {
+    const patternLabels = settings.provenPatterns
+      .map(p => PROVEN_PATTERN_LABELS[p] || p)
+      .join('、');
+    prompt += `\n【使用する表現パターン】${patternLabels}`;
+  }
+
+  prompt += `\n
+以下のライティングルールを厳守してください:`;
+
+  // ライティングルール
+  if (wr.readabilityLevel) {
+    prompt += `\n- ${READABILITY_LABELS[wr.readabilityLevel] || wr.readabilityLevel}言葉遣い`;
+  }
+  if (wr.hiraganaRatio !== undefined && wr.kanjiRatio !== undefined) {
+    prompt += `\n- ひらがな:漢字の比率は約${wr.hiraganaRatio}:${wr.kanjiRatio}を目安に`;
+  }
+  if (wr.useHalfWidthNumbers) {
+    prompt += `\n- 数字は半角を使用`;
+  }
+  if (wr.maxConsecutiveSameEnding !== undefined) {
+    prompt += `\n- 同じ語尾を${wr.maxConsecutiveSameEnding}回以上続けない（「です」「です」など）`;
+  }
+  if (wr.omitConjunctions) {
+    prompt += `\n- 順接の接続詞（そして、だから等）は省略`;
+  }
+  if (wr.useListFormat) {
+    prompt += `\n- 箇条書きを積極的に使う`;
+  }
+
+  // アルゴリズム対策
+  prompt += `\n\n【アルゴリズム対策】`;
+  if (settings.avoidUrls) {
+    prompt += `\n- URLリンクは絶対に含めない`;
+  }
+  if (settings.targetDwellTime > 0) {
+    prompt += `\n- 読者が${settings.targetDwellTime}秒以上滞在したくなる内容に`;
+  }
+  prompt += `\n- ネガティブな内容は避ける`;
 
   // 絵文字設定
   if (settings.useEmoji) {
