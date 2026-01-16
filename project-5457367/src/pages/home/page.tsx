@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import SettingsTab from './components/SettingsTab';
@@ -7,8 +7,17 @@ import ScheduleTab from './components/ScheduleTab';
 import HistoryTab from './components/HistoryTab';
 import TestTab from './components/TestTab';
 import StatusTab from './components/StatusTab';
-import { mockPostSettings, mockStatus, type Settings } from '../../mocks/postSettings';
+import { mockPostSettings, type Settings } from '../../mocks/postSettings';
 import { saveSettingsToNotion } from '../../services/settingsService';
+
+interface PostHistoryItem {
+  id: string;
+  content: string;
+  postedAt: string;
+  status: 'success' | 'failed';
+  tweetId?: string;
+  errorMessage?: string;
+}
 
 type TabType = 'settings' | 'schedule' | 'history' | 'test' | 'status';
 
@@ -83,6 +92,67 @@ const saveSettings = (settings: Settings): void => {
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<TabType>('settings');
   const [settings, setSettings] = useState<Settings>(loadSettings);
+  const [postHistory, setPostHistory] = useState<PostHistoryItem[]>([]);
+
+  // 投稿履歴を取得
+  const fetchHistory = useCallback(async () => {
+    try {
+      const response = await fetch('/api/history');
+      const data = await response.json();
+      if (data.success) {
+        setPostHistory(data.history);
+      }
+    } catch (err) {
+      console.error('Failed to fetch history:', err);
+    }
+  }, []);
+
+  // 初回ロードと定期更新
+  useEffect(() => {
+    fetchHistory();
+    const interval = setInterval(fetchHistory, 30000);
+    return () => clearInterval(interval);
+  }, [fetchHistory]);
+
+  // 投稿履歴から統計を計算
+  const stats = useMemo(() => {
+    const totalPosts = postHistory.length;
+    const successPosts = postHistory.filter(p => p.status === 'success').length;
+    const successRate = totalPosts > 0 ? Math.round((successPosts / totalPosts) * 1000) / 10 : 100;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayPosts = postHistory.filter(p => new Date(p.postedAt) >= today).length;
+
+    // 最近のアクティビティを生成
+    const recentActivities = postHistory.slice(0, 5).map(p => {
+      const postedDate = new Date(p.postedAt);
+      const now = new Date();
+      const diffMs = now.getTime() - postedDate.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+
+      let time: string;
+      if (diffMins < 60) {
+        time = `${diffMins}分前`;
+      } else if (diffHours < 24) {
+        time = `${diffHours}時間前`;
+      } else {
+        time = `${diffDays}日前`;
+      }
+
+      return {
+        time,
+        action: p.status === 'success' ? '投稿に成功しました' : '投稿に失敗しました',
+        icon: p.status === 'success' ? 'ri-check-line' : 'ri-error-warning-line',
+        color: p.status === 'success' ? 'text-green-600' : 'text-red-600',
+        content: p.content.slice(0, 30) + (p.content.length > 30 ? '...' : ''),
+      };
+    });
+
+    return { totalPosts, successRate, todayPosts, recentActivities };
+  }, [postHistory]);
 
   // スケジュール設定から次回投稿時刻を計算
   const nextPostTime = useMemo(() => {
@@ -91,10 +161,13 @@ export default function HomePage() {
 
   // statusをsettingsと連動させる
   const status = useMemo(() => ({
-    ...mockStatus,
+    totalPosts: stats.totalPosts,
+    successRate: stats.successRate,
+    todayPosts: stats.todayPosts,
     nextPostTime,
     isRunning: settings.enabled,
-  }), [nextPostTime, settings.enabled]);
+    recentActivities: stats.recentActivities,
+  }), [stats, nextPostTime, settings.enabled]);
 
   // 設定が変更されたらlocalStorageに保存
   useEffect(() => {

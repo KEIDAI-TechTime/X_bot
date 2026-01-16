@@ -1,5 +1,59 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { TwitterApi } from 'twitter-api-v2';
+import { Client } from '@notionhq/client';
+
+// Notionに投稿履歴を保存
+async function saveHistoryToNotion(
+  content: string,
+  status: 'success' | 'failed',
+  tweetId?: string,
+  errorMessage?: string
+): Promise<void> {
+  const notionApiKey = process.env.NOTION_API_KEY;
+  const historyDatabaseId = process.env.NOTION_HISTORY_DATABASE_ID;
+
+  if (!notionApiKey || !historyDatabaseId) {
+    console.log('Notion history database not configured, skipping history save');
+    return;
+  }
+
+  try {
+    const notion = new Client({ auth: notionApiKey });
+
+    const properties: any = {
+      content: {
+        rich_text: [{ text: { content: content.slice(0, 2000) } }],
+      },
+      postedAt: {
+        date: { start: new Date().toISOString() },
+      },
+      status: {
+        select: { name: status },
+      },
+    };
+
+    if (tweetId) {
+      properties.tweetId = {
+        rich_text: [{ text: { content: tweetId } }],
+      };
+    }
+
+    if (errorMessage) {
+      properties.errorMessage = {
+        rich_text: [{ text: { content: errorMessage.slice(0, 2000) } }],
+      };
+    }
+
+    await notion.pages.create({
+      parent: { database_id: historyDatabaseId },
+      properties,
+    });
+
+    console.log('History saved to Notion');
+  } catch (error) {
+    console.error('Failed to save history to Notion:', error);
+  }
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORSヘッダー
@@ -49,6 +103,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ツイートを投稿
     const result = await client.v2.tweet(content);
 
+    // 履歴を保存（成功）
+    await saveHistoryToNotion(content, 'success', result.data.id);
+
     return res.status(200).json({
       success: true,
       tweetId: result.data.id,
@@ -58,6 +115,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('X API Error:', error);
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    // 履歴を保存（失敗）
+    await saveHistoryToNotion(content, 'failed', undefined, errorMessage);
 
     // Twitter APIのエラーハンドリング
     if (errorMessage.includes('401')) {
