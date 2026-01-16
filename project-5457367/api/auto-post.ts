@@ -45,14 +45,8 @@ function buildPrompt(topic: string, settings: typeof DEFAULT_SETTINGS): string {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Vercel Cron認証チェック
-  const authHeader = req.headers.authorization;
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    // CRON_SECRETが設定されていない場合はスキップ（開発用）
-    if (process.env.CRON_SECRET) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-  }
+  // CORSヘッダー
+  res.setHeader('Access-Control-Allow-Origin', '*');
 
   console.log('Auto-post triggered at:', new Date().toISOString());
 
